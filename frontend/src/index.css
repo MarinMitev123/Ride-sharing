@@ -1,0 +1,474 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #f5f5f5;
+}
+#root {
+  min-height: 100vh;
+}
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  min-height: 300px;
+}
+
+.app-layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.app-header {
+  background: #1e3a5f;
+  color: #fff;
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.app-header .logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: #fff;
+  text-decoration: none;
+}
+.app-header .logo:hover {
+  color: #fff;
+}
+.app-header .logo-icon {
+  display: inline-flex;
+  color: #c7d2fe;
+}
+.app-header .logo:hover .logo-icon {
+  color: #fff;
+}
+.app-header nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.app-header nav a,
+.app-header .btn-link {
+  color: #e0e7ff;
+  text-decoration: none;
+  font-size: 0.95rem;
+  padding: 8px 14px;
+  border-radius: 8px;
+  transition: color 0.2s, background 0.2s;
+}
+.app-header nav a:hover,
+.app-header .btn-link:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+.app-header .btn-link {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+.app-header .user-name {
+  color: #c7d2fe;
+  font-size: 0.9rem;
+}
+.app-main {
+  flex: 1;
+  padding: 24px;
+  max-width: 900px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Страници Вход / Регистрация – по-привлекателен вид */
+.auth-page {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  background: linear-gradient(135deg, #e8eef5 0%, #d4dce8 50%, #c5d0e0 100%);
+  min-height: calc(100vh - 52px);
+}
+.auth-page__card {
+  width: 100%;
+  max-width: 420px;
+  background: #fff;
+  padding: 40px 36px;
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(30, 58, 95, 0.12), 0 4px 12px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(30, 58, 95, 0.08);
+}
+.auth-page__header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+.auth-page__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #1e3a5f 0%, #2d4a6f 100%);
+  color: #c7d2fe;
+  margin-bottom: 16px;
+}
+.auth-page__icon--register {
+  background: linear-gradient(145deg, #2563eb 0%, #1d4ed8 100%);
+  color: #bfdbfe;
+}
+.auth-page__title {
+  margin: 0 0 8px;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+.auth-page__tagline {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #64748b;
+  line-height: 1.45;
+}
+.auth-page__form label {
+  display: block;
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+  color: #374151;
+}
+.auth-page__form label input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 12px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 1rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.auth-page__form label input:focus {
+  outline: none;
+  border-color: #1e3a5f;
+  box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.15);
+}
+.auth-page__form label input::placeholder {
+  color: #94a3b8;
+}
+.auth-page__form .form-error {
+  background: #fef2f2;
+  color: #b91c1c;
+  padding: 12px 14px;
+  border-radius: 10px;
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+}
+.auth-page__btn {
+  width: 100%;
+  padding: 14px;
+  margin-top: 8px;
+  background: linear-gradient(145deg, #1e3a5f 0%, #2d4a6f 100%);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.05s, box-shadow 0.2s;
+}
+.auth-page__btn:hover:not(:disabled) {
+  box-shadow: 0 4px 14px rgba(30, 58, 95, 0.35);
+}
+.auth-page__btn:active:not(:disabled) {
+  transform: scale(0.99);
+}
+.auth-page__btn:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+.auth-page__card .form-footer {
+  margin-top: 24px;
+  text-align: center;
+  color: #64748b;
+  font-size: 0.95rem;
+}
+.auth-page__card .form-footer a {
+  color: #1e3a5f;
+  font-weight: 600;
+  text-decoration: none;
+}
+.auth-page__card .form-footer a:hover {
+  text-decoration: underline;
+}
+
+.page-form {
+  max-width: 400px;
+  margin: 0 auto;
+  background: #fff;
+  padding: 32px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.page-form h1 {
+  margin-top: 0;
+  margin-bottom: 24px;
+  font-size: 1.5rem;
+}
+.page-form label {
+  display: block;
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+  color: #374151;
+}
+.page-form label input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 1rem;
+}
+.page-form button {
+  width: 100%;
+  padding: 12px;
+  margin-top: 8px;
+  background: #1e3a5f;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.page-form button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+.page-form .form-error {
+  background: #fef2f2;
+  color: #b91c1c;
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+}
+.page-form .form-footer {
+  margin-top: 20px;
+  text-align: center;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+.page-form .form-footer a {
+  color: #1e3a5f;
+  font-weight: 500;
+}
+
+.page-content h1 {
+  margin-top: 0;
+  margin-bottom: 8px;
+  font-size: 1.5rem;
+}
+.page-content .form-error {
+  background: #fef2f2;
+  color: #b91c1c;
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+.rides-search {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.rides-search-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+  color: #374151;
+}
+.rides-search-select,
+.rides-search-input,
+.rides-search input {
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 1rem;
+  min-width: 160px;
+  background: #fff;
+}
+.rides-search-select {
+  cursor: pointer;
+}
+.rides-search input[type="text"] {
+  min-width: 140px;
+}
+.rides-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.rides-list .ride-card {
+  display: block;
+  background: #fff;
+  padding: 16px 20px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  text-decoration: none;
+  color: inherit;
+  transition: box-shadow 0.2s;
+}
+.rides-list .ride-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+}
+.rides-list .route {
+  font-weight: 600;
+  font-size: 1.05rem;
+  display: block;
+  margin-bottom: 4px;
+}
+.rides-list .meta,
+.rides-list .car {
+  font-size: 0.9rem;
+  color: #6b7280;
+  display: block;
+}
+.rides-empty-hint {
+  color: #6b7280;
+  font-size: 1rem;
+  margin-top: 16px;
+  padding: 16px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+.rides-search-select.date-select {
+  min-width: 72px;
+}
+.date-input-with-calendar {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  padding: 0 10px 0 12px;
+  min-width: 140px;
+  height: 42px;
+  box-sizing: border-box;
+}
+.date-input-with-calendar .rides-search-input,
+.date-input-with-calendar input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 1rem;
+  outline: none;
+}
+.date-input-with-calendar .rides-search-input::placeholder,
+.date-input-with-calendar input[type="text"]::placeholder {
+  color: #9ca3af;
+}
+.date-picker-hidden {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.btn-calendar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: #374151;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.btn-calendar-icon:hover {
+  color: #1e3a5f;
+}
+.btn-calendar-icon svg {
+  display: block;
+}
+.page-form .date-input-with-calendar {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  padding: 0 10px 0 12px;
+  min-width: 140px;
+  height: 42px;
+  box-sizing: border-box;
+}
+.page-form .date-input-with-calendar input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 1rem;
+  outline: none;
+}
+.page-form .date-picker-hidden {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.page-form .btn-calendar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: #374151;
+  cursor: pointer;
+}
+.page-form .btn-calendar-icon:hover {
+  color: #1e3a5f;
+}
+.page-form .date-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+  color: #374151;
+}
+.page-form .date-field select {
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 1rem;
+  min-width: 80px;
+  background: #fff;
+}
+.ride-meta {
+  color: #6b7280;
+  margin-bottom: 16px;
+  font-size: 0.95rem;
+}
+.ride-bookings ul {
+  list-style: none;
+  padding: 0;
+}
+.ride-bookings li {
+  padding: 8px 0;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 0.95rem;
+}
