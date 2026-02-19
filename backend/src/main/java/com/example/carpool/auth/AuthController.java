@@ -1,8 +1,8 @@
 package com.example.carpool.auth;
 
-import com.example.carpool.user.UserRepository;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -18,7 +18,7 @@ public class AuthController {
 
     private final AuthService authService;
 
-    @PostMapping("/register")
+    @PostMapping(value = "/register", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
         return ResponseEntity.ok(authService.register(request));
     }
@@ -36,6 +36,20 @@ public class AuthController {
                 request.currentPassword(),
                 request.newPassword()
         );
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<ForgotPasswordResponse> forgotPassword(
+            @Valid @RequestBody ForgotPasswordRequest request,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Origin", required = false) String origin) {
+        String baseUrl = origin != null ? origin : "http://localhost:5173";
+        return ResponseEntity.ok(authService.forgotPassword(request.email(), baseUrl));
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request.token(), request.newPassword());
         return ResponseEntity.ok().build();
     }
 }

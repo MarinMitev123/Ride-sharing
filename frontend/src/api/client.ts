@@ -7,13 +7,12 @@ export function getApiUrl(path: string): string {
   return `${base}/api/v1${p}`
 }
 
-/** Адресът, към който фронтендът изпраща заявки (за показване в грешки). */
 export function getApiBaseUrl(): string {
   return String(API_BASE).replace(/\/$/, '') || DEFAULT_API_BASE
 }
 
 const getNetworkErrorMessage = (): string =>
-  `Не може да се свърже със сървъра (${getApiBaseUrl()}). Уверете се, че бекендът работи на този адрес, или задайте VITE_API_URL във файл .env в папка frontend и рестартирайте (npm run dev).`
+  `Не може да се свърже със сървъра (${getApiBaseUrl()}). Уверете се, че бекендът работи.`
 
 export async function apiRequest<T>(
   path: string,
@@ -43,15 +42,12 @@ export async function apiRequest<T>(
     try {
       const json = JSON.parse(body)
       message = json.message ?? body
-      // Превод на често срещани съобщения от бекенда
-      if (message === 'Email is already in use') message = 'Този имейл вече се използва.'
-      if (message === 'Validation failed' && Array.isArray(json.details))
-        message = 'Невалидни данни: ' + json.details.join('; ')
     } catch {
-      // use body as message
+      // keep body
     }
-    throw new Error(message || `HTTP ${res.status}`)
+    throw new Error(message || `Грешка ${res.status}`)
   }
-  if (res.status === 204) return undefined as T
-  return res.json() as Promise<T>
+  const text = await res.text()
+  if (!text.trim()) return undefined as T
+  return JSON.parse(text) as T
 }

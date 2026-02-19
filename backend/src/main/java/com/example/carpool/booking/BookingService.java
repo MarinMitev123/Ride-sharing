@@ -9,7 +9,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -22,136 +21,149 @@ public class BookingService {
     private final UserRepository userRepository;
 
     @Transactional
-    public BookingDto createBooking(Long rideId, Long passengerId) {
+    public BookingDto create(Long rideId, Long passengerId) {
         RideEntity ride = rideRepository.findById(rideId)
                 .orElseThrow(() -> new IllegalArgumentException("Ride not found"));
-        if (ride.getStatus() != RideStatus.OPEN) {
-            throw new IllegalArgumentException("Ride is not open for bookings");
+        UserEntity passenger = userRepository.findById(passengerId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        if (ride.getDriver() != null && ride.getDriver().getId().equals(passengerId)) {
+            throw new IllegalArgumentException("Driver cannot book own ride");
+        }
+        if (bookingRepository.existsByRide_IdAndPassenger_IdAndStatusIn(
+                rideId, passengerId, List.of(BookingStatus.PENDING, BookingStatus.APPROVED))) {
+            throw new IllegalArgumentException("Already booked");
         }
         if (ride.getAvailableSeats() == null || ride.getAvailableSeats() <= 0) {
             throw new IllegalArgumentException("No available seats");
         }
-        if (bookingRepository.existsByRide_IdAndPassenger_IdAndStatusIn(
-                rideId, passengerId, Arrays.asList(BookingStatus.PENDING, BookingStatus.APPROVED))) {
-            throw new IllegalArgumentException("You already have a pending or approved booking for this ride");
-        }
-        UserEntity passenger = userRepository.findById(passengerId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
-        BookingEntity booking = BookingEntity.builder()
+        BookingEntity entity = BookingEntity.builder()
                 .ride(ride)
                 .passenger(passenger)
                 .status(BookingStatus.PENDING)
                 .build();
-        BookingEntity saved = bookingRepository.save(booking);
-        return BookingMapper.toDto(saved);
+        entity = bookingRepository.save(entity);
+        return BookingMapper.toDto(entity);
+    }
+
+    @Transactional(readOnly = true)
+    public List<BookingDto> getBookingsForRide(Long rideId) {
+        return bookingRepository.findByRide_IdOrderByIdAsc(rideId).stream()
+                .map(BookingMapper::toDto)
+                .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
     public List<BookingDto> getMyBookings(Long passengerId) {
-        return bookingRepository.findByPassenger_IdOrderByIdDesc(passengerId)
-                .stream()
-                .map(BookingMapper::toDtoWithRideInfo)
+        return bookingRepository.findByPassenger_IdOrderByIdDesc(passengerId).stream()
+                .map(BookingMapper::toDto)
                 .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
-    public List<BookingDto> getBookingsForMyRides(Long driverId) {
-        return bookingRepository.findByRide_Driver_IdOrderByIdDesc(driverId)
-                .stream()
-                .map(BookingMapper::toDtoWithPassengerInfo)
+    public List<BookingDto> getPendingBookingsForDriver(Long driverId) {
+        return bookingRepository.findPendingByDriverId(driverId, BookingStatus.PENDING).stream()
+                .map(BookingMapper::toDto)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<BookingDto> getActiveBookingsForDriver(Long driverId) {
+        return bookingRepository.findActiveByDriverId(driverId, BookingStatus.PENDING, BookingStatus.APPROVED).stream()
+                .map(BookingMapper::toDto)
                 .collect(Collectors.toList());
     }
 
     @Transactional
-    public BookingDto approve(Long bookingId, Long driverId) {
-        BookingEntity booking = bookingRepository.findById(bookingId)
+    public BookingDto setPickupLocation(Long bookingId, Long userId, Double lat, Double lng, String address,
+                                        String pickupNeighborhood, String passengerNote) {
+        BookingEntity entity = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new IllegalArgumentException("Booking not found"));
-        if (booking.getStatus() != BookingStatus.PENDING) {
-            throw new IllegalArgumentException("Booking is not pending");
+        if (!entity.getPassenger().getId().equals(userId)) {
+            throw new IllegalArgumentException("Not your booking");
         }
-        RideEntity ride = booking.getRide();
+        entity.setPickupLat(lat);
+        entity.setPickupLng(lng);
+        entity.setPickupAddress(address != null ? address.substring(0, Math.min(address.length(), 500)) : null);
+        entity.setPickupNeighborhood(pickupNeighborhood != null ? pickupNeighborhood.substring(0, Math.min(pickupNeighborhood.length(), 255)) : null);
+        entity.setPassengerNote(passengerNote != null ? passengerNote.substring(0, Math.min(passengerNote.length(), 1000)) : null);
+        entity = bookingRepository.save(entity);
+        return BookingMapper.toDto(entity);
+    }
+
+    @Transactional
+    public BookingDto approve(Long bookingId, Long driverId) {
+        BookingEntity entity = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new IllegalArgumentException("Booking not found"));
+        RideEntity ride = entity.getRide();
         if (ride.getDriver() == null || !ride.getDriver().getId().equals(driverId)) {
-            throw new IllegalArgumentException("You are not the driver of this ride");
+            throw new IllegalArgumentException("Not driver of this ride");
         }
-        if (ride.getAvailableSeats() == null || ride.getAvailableSeats() <= 0) {
-            throw new IllegalArgumentException("No available seats");
+        if (entity.getStatus() != BookingStatus.PENDING) {
+            throw new IllegalArgumentException("Booking not pending");
         }
-        booking.setStatus(BookingStatus.APPROVED);
-        bookingRepository.save(booking);
+        entity.setStatus(BookingStatus.APPROVED);
+        entity = bookingRepository.save(entity);
         ride.setAvailableSeats(ride.getAvailableSeats() - 1);
         if (ride.getAvailableSeats() <= 0) {
             ride.setStatus(RideStatus.FULL);
         }
         rideRepository.save(ride);
-        return BookingMapper.toDto(booking);
+        return BookingMapper.toDto(entity);
     }
 
     @Transactional
     public BookingDto reject(Long bookingId, Long driverId) {
-        BookingEntity booking = bookingRepository.findById(bookingId)
+        BookingEntity entity = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new IllegalArgumentException("Booking not found"));
-        if (booking.getStatus() != BookingStatus.PENDING) {
-            throw new IllegalArgumentException("Booking is not pending");
-        }
-        RideEntity ride = booking.getRide();
+        RideEntity ride = entity.getRide();
         if (ride.getDriver() == null || !ride.getDriver().getId().equals(driverId)) {
-            throw new IllegalArgumentException("You are not the driver of this ride");
+            throw new IllegalArgumentException("Not driver of this ride");
         }
-        booking.setStatus(BookingStatus.REJECTED);
-        bookingRepository.save(booking);
-        return BookingMapper.toDto(booking);
+        if (entity.getStatus() != BookingStatus.PENDING) {
+            throw new IllegalArgumentException("Booking not pending");
+        }
+        entity.setStatus(BookingStatus.REJECTED);
+        entity = bookingRepository.save(entity);
+        return BookingMapper.toDto(entity);
     }
 
     @Transactional
-    public BookingDto cancel(Long bookingId, Long passengerId) {
-        BookingEntity booking = bookingRepository.findById(bookingId)
+    public void cancel(Long bookingId, Long userId) {
+        BookingEntity entity = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new IllegalArgumentException("Booking not found"));
-        if (booking.getPassenger() == null || !booking.getPassenger().getId().equals(passengerId)) {
-            throw new IllegalArgumentException("You are not the passenger of this booking");
+        if (!entity.getPassenger().getId().equals(userId)) {
+            throw new IllegalArgumentException("Not your booking");
         }
-        if (booking.getStatus() != BookingStatus.PENDING && booking.getStatus() != BookingStatus.APPROVED) {
-            throw new IllegalArgumentException("Booking cannot be canceled");
-        }
-        if (booking.getStatus() == BookingStatus.APPROVED) {
-            RideEntity ride = booking.getRide();
+        boolean wasApproved = entity.getStatus() == BookingStatus.APPROVED;
+        entity.setStatus(BookingStatus.CANCELED);
+        bookingRepository.save(entity);
+        if (wasApproved) {
+            RideEntity ride = entity.getRide();
             ride.setAvailableSeats(ride.getAvailableSeats() + 1);
             if (ride.getStatus() == RideStatus.FULL) {
                 ride.setStatus(RideStatus.OPEN);
             }
             rideRepository.save(ride);
         }
-        booking.setStatus(BookingStatus.CANCELED);
-        bookingRepository.save(booking);
-        return BookingMapper.toDto(booking);
     }
 
     @Transactional
-    public BookingDto setPickupLocation(Long bookingId, Long passengerId, Double pickupLat, Double pickupLng, String pickupAddress) {
-        BookingEntity booking = bookingRepository.findById(bookingId)
+    public void removePassengerByDriver(Long bookingId, Long driverId) {
+        BookingEntity entity = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new IllegalArgumentException("Booking not found"));
-        if (booking.getPassenger() == null || !booking.getPassenger().getId().equals(passengerId)) {
-            throw new IllegalArgumentException("You are not the passenger of this booking");
+        RideEntity ride = entity.getRide();
+        if (ride.getDriver() == null || !ride.getDriver().getId().equals(driverId)) {
+            throw new IllegalArgumentException("Not driver of this ride");
         }
-        if (booking.getStatus() != BookingStatus.PENDING && booking.getStatus() != BookingStatus.APPROVED) {
-            throw new IllegalArgumentException("Cannot set pickup for this booking");
+        if (entity.getStatus() != BookingStatus.APPROVED) {
+            throw new IllegalArgumentException("Can only remove approved passengers");
         }
-        booking.setPickupLat(pickupLat);
-        booking.setPickupLng(pickupLng);
-        booking.setPickupAddress(pickupAddress != null ? pickupAddress : "");
-        bookingRepository.save(booking);
-        return BookingMapper.toDtoWithRideInfo(booking);
-    }
-
-    @Transactional(readOnly = true)
-    public List<BookingDto> getBookingsByRideId(Long rideId, Long currentUserId) {
-        RideEntity ride = rideRepository.findById(rideId)
-                .orElseThrow(() -> new IllegalArgumentException("Ride not found"));
-        if (ride.getDriver() == null || !ride.getDriver().getId().equals(currentUserId)) {
-            throw new IllegalArgumentException("Only the driver can view bookings for this ride");
+        entity.setStatus(BookingStatus.CANCELED);
+        bookingRepository.save(entity);
+        ride.setAvailableSeats(ride.getAvailableSeats() + 1);
+        if (ride.getStatus() == RideStatus.FULL) {
+            ride.setStatus(RideStatus.OPEN);
         }
-        return bookingRepository.findByRide_IdOrderByIdDesc(rideId)
-                .stream()
-                .map(BookingMapper::toDtoWithPassengerInfo)
-                .collect(Collectors.toList());
+        rideRepository.save(ride);
     }
 }

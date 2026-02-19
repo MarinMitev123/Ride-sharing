@@ -19,4 +19,6 @@ public class BookingDto {
     Double pickupLat;
     Double pickupLng;
     String pickupAddress;
+    String pickupNeighborhood;
+    String passengerNote;
 }

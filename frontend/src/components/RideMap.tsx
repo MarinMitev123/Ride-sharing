@@ -4,9 +4,8 @@ import L from 'leaflet'
 import type { RideDto } from '../types/api'
 import 'leaflet/dist/leaflet.css'
 
-const defaultCenter: [number, number] = [42.7339, 25.4858] // Bulgaria center
+const defaultCenter: [number, number] = [42.7339, 25.4858]
 
-// Всички областни градове в България (координати за картата)
 const cityCoords: Record<string, [number, number]> = {
   Благоевград: [42.0167, 23.0944],
   Бургас: [42.5048, 27.4626],
@@ -95,21 +94,23 @@ function MapClickHandler({
 export interface RideMapProps {
   ride: RideDto
   pickupPoints?: { lat: number; lng: number; label?: string }[]
+  pendingPickup?: { lat: number; lng: number } | null
   onPickupClick?: (lat: number, lng: number) => void
   selectPickupMode?: boolean
 }
 
-export function RideMap({ ride, pickupPoints = [], onPickupClick, selectPickupMode = false }: RideMapProps) {
-  const from = getCoords(ride.fromLat, ride.fromLng, ride.fromCity)
-  const to = getCoords(ride.toLat, ride.toLng, ride.toCity)
+export function RideMap({ ride, pickupPoints = [], pendingPickup = null, onPickupClick, selectPickupMode = false }: RideMapProps) {
+  const from = getCoords((ride as { fromLat?: number }).fromLat, (ride as { fromLng?: number }).fromLng, ride.fromCity)
+  const to = getCoords((ride as { toLat?: number }).toLat, (ride as { toLng?: number }).toLng, ride.toCity)
 
   const allPoints = useMemo(() => {
     const pts: [number, number][] = []
     if (from) pts.push(from)
     if (to) pts.push(to)
     pickupPoints.forEach((p) => pts.push([p.lat, p.lng]))
+    if (pendingPickup) pts.push([pendingPickup.lat, pendingPickup.lng])
     return pts
-  }, [from, to, pickupPoints])
+  }, [from, to, pickupPoints, pendingPickup])
 
   const center = from ?? to ?? defaultCenter
 
@@ -138,6 +139,11 @@ export function RideMap({ ride, pickupPoints = [], onPickupClick, selectPickupMo
             <Popup>{p.label ?? 'Място за качване'}</Popup>
           </Marker>
         ))}
+        {pendingPickup && (
+          <Marker position={[pendingPickup.lat, pendingPickup.lng]} icon={pickupIcon}>
+            <Popup>Избрано място – натисни „Запази мястото“</Popup>
+          </Marker>
+        )}
       </MapContainer>
       {selectPickupMode && (
         <p style={{ margin: 8, fontSize: 14, color: '#666' }}>

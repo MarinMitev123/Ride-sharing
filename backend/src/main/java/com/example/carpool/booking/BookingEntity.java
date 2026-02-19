@@ -34,5 +34,9 @@ public class BookingEntity {
     private Double pickupLng;
     @Column(length = 500)
     private String pickupAddress;
+    @Column(length = 255)
+    private String pickupNeighborhood;
+    @Column(length = 1000)
+    private String passengerNote;
 }
 

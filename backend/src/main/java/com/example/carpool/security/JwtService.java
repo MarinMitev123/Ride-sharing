@@ -28,17 +28,29 @@ public class JwtService {
         return claimsResolver.apply(claims);
     }
 
+    private static final long EXPIRY_24H = 1000L * 60 * 60 * 24;
+    private static final long EXPIRY_7_DAYS = 1000L * 60 * 60 * 24 * 7;
+
     public String generateToken(UserDetails userDetails) {
-        return generateToken(Map.of(), userDetails);
+        return generateToken(Map.of(), userDetails, false);
+    }
+
+    public String generateToken(UserDetails userDetails, boolean rememberMe) {
+        return generateToken(Map.of(), userDetails, rememberMe);
     }
 
     public String generateToken(Map<String, Object> extraClaims, UserDetails userDetails) {
+        return generateToken(extraClaims, userDetails, false);
+    }
+
+    public String generateToken(Map<String, Object> extraClaims, UserDetails userDetails, boolean rememberMe) {
         long now = System.currentTimeMillis();
+        long expiryMs = Boolean.TRUE.equals(rememberMe) ? EXPIRY_7_DAYS : EXPIRY_24H;
         return Jwts.builder()
                 .setClaims(extraClaims)
                 .setSubject(userDetails.getUsername())
                 .setIssuedAt(new Date(now))
-                .setExpiration(new Date(now + 1000 * 60 * 60 * 24)) // 24 часа
+                .setExpiration(new Date(now + expiryMs))
                 .signWith(getSignInKey(), SignatureAlgorithm.HS256)
                 .compact();
     }

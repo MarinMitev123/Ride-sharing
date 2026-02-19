@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 
 @Entity
 @Table(name = "users")
@@ -39,5 +40,9 @@ public class UserEntity {
 
     @Column(precision = 2, scale = 1)
     private BigDecimal ratingAverage;
+
+    private String resetToken;
+
+    private Instant resetTokenExpiry;
 }
 

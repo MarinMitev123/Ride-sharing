@@ -1,10 +1,17 @@
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { getPendingBookingsForDriver } from './api/bookings'
 import { Login } from './pages/Login'
 import { Register } from './pages/Register'
 import { RidesList } from './pages/RidesList'
 import { RideDetail } from './pages/RideDetail'
 import { CreateRide } from './pages/CreateRide'
+import { MyBookings } from './pages/MyBookings'
+import { PendingDriverBookings } from './pages/PendingDriverBookings'
+import { ForgotPassword } from './pages/ForgotPassword'
+import { ResetPassword } from './pages/ResetPassword'
+import { Profile } from './pages/Profile'
 import './index.css'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -18,7 +25,19 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function Layout({ children }: { children: React.ReactNode }) {
-  const { user, isAuthenticated, logout } = useAuth()
+  const { user, isAuthenticated, logout, token } = useAuth()
+  const [pendingCount, setPendingCount] = useState(0)
+
+  useEffect(() => {
+    if (!isAuthenticated || !token) {
+      setPendingCount(0)
+      return
+    }
+    getPendingBookingsForDriver(token)
+      .then((list) => setPendingCount(list.length))
+      .catch(() => setPendingCount(0))
+  }, [isAuthenticated, token])
+
   return (
     <div className="app-layout">
       <header className="app-header">
@@ -38,6 +57,11 @@ function Layout({ children }: { children: React.ReactNode }) {
             <>
               <Link to="/rides">Пътувания</Link>
               <Link to="/rides/new">Създай пътуване</Link>
+              <Link to="/my-bookings">Мои резервации</Link>
+              <Link to="/pending-bookings">
+                Чакащи резервации{pendingCount > 0 ? ` (${pendingCount})` : ''}
+              </Link>
+              <Link to="/profile">Профил</Link>
             </>
           )}
           {isAuthenticated ? (
@@ -67,6 +91,11 @@ function AppRoutes() {
       <Route path="/rides" element={<ProtectedRoute><RidesList /></ProtectedRoute>} />
       <Route path="/rides/new" element={<ProtectedRoute><CreateRide /></ProtectedRoute>} />
       <Route path="/rides/:id" element={<ProtectedRoute><RideDetail /></ProtectedRoute>} />
+      <Route path="/my-bookings" element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />
+      <Route path="/pending-bookings" element={<ProtectedRoute><PendingDriverBookings /></ProtectedRoute>} />
+      <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="*" element={<Navigate to="/rides" replace />} />
     </Routes>
   )

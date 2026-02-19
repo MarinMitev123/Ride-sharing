@@ -1,4 +1,8 @@
 spring:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
   datasource:
     url: jdbc:mysql://localhost:3306/carpool_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: root

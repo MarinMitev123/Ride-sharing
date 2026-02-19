@@ -47,6 +47,8 @@ public class BookingMapper {
                 .pickupLat(entity.getPickupLat())
                 .pickupLng(entity.getPickupLng())
                 .pickupAddress(entity.getPickupAddress())
+                .pickupNeighborhood(entity.getPickupNeighborhood())
+                .passengerNote(entity.getPassengerNote())
                 .build();
     }
 }
