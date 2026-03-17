@@ -40,6 +40,7 @@ public class RideMapper {
                 .toLng(request.toLng())
                 .departureTime(request.departureTime())
                 .availableSeats(request.availableSeats())
+                .totalSeats(request.availableSeats())
                 .price(request.price())
                 .carDetails(request.carDetails())
                 .status(RideStatus.OPEN)

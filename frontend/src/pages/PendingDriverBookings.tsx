@@ -21,6 +21,16 @@ function formatDateTime(iso: string | undefined) {
   })
 }
 
+/** Пътуванията се показват само до 2 часа след часа на тръгване. */
+const HOURS_AFTER_DEPARTURE_VISIBLE = 2
+
+function isRideStillVisible(departureTime: string | undefined): boolean {
+  if (!departureTime) return true
+  const dep = new Date(departureTime).getTime()
+  const cutoff = Date.now() - HOURS_AFTER_DEPARTURE_VISIBLE * 60 * 60 * 1000
+  return dep >= cutoff
+}
+
 function pickupText(b: BookingDto): string {
   if (b.pickupAddress) return b.pickupAddress
   if (b.pickupLat != null && b.pickupLng != null) {
@@ -58,8 +68,8 @@ export function PendingDriverBookings() {
     return () => { cancelled = true }
   }, [token])
 
-  const pendingList = list.filter((b) => b.status === 'PENDING')
-  const approvedList = list.filter((b) => b.status === 'APPROVED')
+  const pendingList = list.filter((b) => b.status === 'PENDING' && isRideStillVisible(b.departureTime))
+  const approvedList = list.filter((b) => b.status === 'APPROVED' && isRideStillVisible(b.departureTime))
 
   const handleApprove = async (bookingId: number) => {
     if (!token) return

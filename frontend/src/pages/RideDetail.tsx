@@ -1,17 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getRideById } from '../api/rides'
+import { getRideById, getRideRoute, validatePoint as apiValidatePoint, validatePoints as apiValidatePoints, bookRide } from '../api/rides'
+import { getDriverRoute } from '../api/route'
 import {
   getBookingsForRide,
   getMyBookings,
-  createBooking,
-  setPickupLocation,
   cancelBooking,
+  approveBooking,
+  rejectBooking,
 } from '../api/bookings'
-import { searchAddress, type GeocodingResult } from '../api/geocoding'
+import { getConversation, sendMessage } from '../api/chat'
+import { createRating } from '../api/ratings'
 import { useAuth } from '../contexts/AuthContext'
+import { useToast } from '../contexts/ToastContext'
 import { RideMap } from '../components/RideMap'
-import type { RideDto, BookingDto } from '../types/api'
+import { PickupDropoffSelector } from '../components/PickupDropoffSelector'
+import { RideBookingPanel } from '../components/RideBookingPanel'
+import type { RideDto, BookingDto, ChatMessageDto, ValidatePointsResponse, ValidatePointResponse, RideStopDto } from '../types/api'
 
 function formatDateTime(iso: string) {
   const d = new Date(iso)
@@ -27,28 +32,138 @@ function formatDateTime(iso: string) {
 export function RideDetail() {
   const { id } = useParams<{ id: string }>()
   const { token, user } = useAuth()
+  const { addToast } = useToast()
   const [ride, setRide] = useState<RideDto | null>(null)
   const [bookings, setBookings] = useState<BookingDto[]>([])
   const [myBooking, setMyBooking] = useState<BookingDto | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [pickupPoints, setPickupPoints] = useState<{ lat: number; lng: number; label?: string }[]>([])
-  const [selectMode, setSelectMode] = useState(false)
-  const [pendingPickup, setPendingPickup] = useState<{ lat: number; lng: number } | null>(null)
-  const [pendingPickupAddress, setPendingPickupAddress] = useState('')
-  const [pickupSaving, setPickupSaving] = useState(false)
-  const [pickupError, setPickupError] = useState('')
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<GeocodingResult[]>([])
-  const [searchLoading, setSearchLoading] = useState(false)
-  const [searchError, setSearchError] = useState('')
   const [bookingActionId, setBookingActionId] = useState<number | null>(null)
-  const [pickupNeighborhood, setPickupNeighborhood] = useState('')
-  const [pickupNote, setPickupNote] = useState('')
+  const [approveRejectBookingId, setApproveRejectBookingId] = useState<number | null>(null)
+  const [chatOtherUserId, setChatOtherUserId] = useState<number | null>(null)
+  const [chatMessages, setChatMessages] = useState<ChatMessageDto[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatSending, setChatSending] = useState(false)
+  const [ratingToUserId, setRatingToUserId] = useState<number | null>(null)
+  const [ratingScore, setRatingScore] = useState(5)
+  const [ratingComment, setRatingComment] = useState('')
+  const [ratingSubmitting, setRatingSubmitting] = useState(false)
+  const [ratingSent, setRatingSent] = useState(false)
+  const [routeData, setRouteData] = useState<{ coordinates: [number, number][]; stops: import('../types/api').RideStopDto[] } | null>(null)
+  const [pickupDropoffPickup, setPickupDropoffPickup] = useState<{ lat: number; lng: number } | null>(null)
+  const [pickupDropoffDropoff, setPickupDropoffDropoff] = useState<{ lat: number; lng: number } | null>(null)
+  const [validatedPoints, setValidatedPoints] = useState<ValidatePointsResponse | null>(null)
+  const [validatingPoints, setValidatingPoints] = useState(false)
+  const [pickupValidation, setPickupValidation] = useState<ValidatePointResponse | null>(null)
+  const [validatingPickupPoint, setValidatingPickupPoint] = useState(false)
+  const [selectingModePickupDropoff, setSelectingModePickupDropoff] = useState<'pickup' | 'dropoff' | null>(null)
+  const [driverRoute, setDriverRoute] = useState<{ coordinates: [number, number][] } | null>(null)
+  const [driverRouteLoading, setDriverRouteLoading] = useState(false)
+  const [driverPickedUpCount, setDriverPickedUpCount] = useState(0)
+  const [driverComingToPassengerId, setDriverComingToPassengerId] = useState<number | null>(null)
 
   const rideId = id ? parseInt(id, 10) : NaN
-  const isDriver = user && ride && ride.driverId === user.id
+  const isDriver = Boolean(user && ride && Number(ride.driverId) === Number(user.id))
   const hasActiveBooking = myBooking && (myBooking.status === 'PENDING' || myBooking.status === 'APPROVED')
+  const canChat = token && user && ride && (isDriver || hasActiveBooking || myBooking)
+  const canRate = ride?.status === 'FINISHED' && token && user && (isDriver || myBooking)
+  const chatPartners = isDriver
+    ? bookings
+        .filter((b) => b.status === 'PENDING' || b.status === 'APPROVED')
+        .map((b) => ({ id: b.passengerId, name: b.passengerName ?? 'Пътник' }))
+    : ride ? [{ id: ride.driverId, name: 'Шофьор' }] : []
+  const otherUserId = isDriver ? chatOtherUserId : (ride ? ride.driverId : null)
+
+  /** Одобрени/чакащи резервации с pickup точки, подредени по разстояние от старта (като backend). */
+  const orderedPickups = useMemo(() => {
+    if (!ride?.fromLat || !ride?.fromLng) return []
+    const withPickup = bookings.filter(
+      (b) => (b.status === 'PENDING' || b.status === 'APPROVED') && b.pickupLat != null && b.pickupLng != null
+    )
+    const distSq = (lat: number, lng: number) => {
+      const dLat = lat - ride.fromLat!
+      const dLng = lng - ride.fromLng!
+      return dLat * dLat + dLng * dLng
+    }
+    return [...withPickup].sort((a, b) => distSq(a.pickupLat!, a.pickupLng!) - distSq(b.pickupLat!, b.pickupLng!))
+  }, [ride, bookings])
+
+  /** Точки по маршрута в реда на backend: старт → забиране 1, 2, … → край. */
+  const driverWaypoints = useMemo((): [number, number][] => {
+    if (!ride?.fromLat || !ride?.fromLng || !ride?.toLat || !ride?.toLng) return []
+    const pts: [number, number][] = [[ride.fromLat, ride.fromLng]]
+    orderedPickups.forEach((b) => pts.push([b.pickupLat!, b.pickupLng!]))
+    pts.push([ride.toLat, ride.toLng])
+    return pts
+  }, [ride, orderedPickups])
+
+  /** Индекси в driverRoute.coordinates, съответстващи на всяка точка от driverWaypoints. */
+  const driverWaypointIndices = useMemo(() => {
+    if (!driverRoute?.coordinates?.length || !driverWaypoints.length) return []
+    const coords = driverRoute.coordinates
+    const findClosest = (lat: number, lng: number) => {
+      let best = 0
+      let bestD = Infinity
+      coords.forEach((c, i) => {
+        const d = (c[0] - lat) ** 2 + (c[1] - lng) ** 2
+        if (d < bestD) {
+          bestD = d
+          best = i
+        }
+      })
+      return best
+    }
+    const indices = driverWaypoints.map(([lat, lng]) => findClosest(lat, lng))
+    return indices
+  }, [driverRoute?.coordinates, driverWaypoints])
+
+  /** Синтетични спирки за целия маршрут: Старт, Забраване 1, 2, …, Край. */
+  const driverRouteFullStops = useMemo((): RideStopDto[] => {
+    if (!ride) return []
+    const stops: RideStopDto[] = []
+    stops.push({
+      id: -1,
+      rideId: ride.id,
+      name: 'Старт',
+      latitude: ride.fromLat!,
+      longitude: ride.fromLng!,
+      stopOrder: 0,
+      type: 'START',
+    })
+    orderedPickups.forEach((b, i) => {
+      stops.push({
+        id: -(i + 2),
+        rideId: ride.id,
+        name: String(i + 1),
+        latitude: b.pickupLat!,
+        longitude: b.pickupLng!,
+        stopOrder: i + 1,
+        type: 'PICKUP',
+      })
+    })
+    stops.push({
+      id: -1000,
+      rideId: ride.id,
+      name: 'Край',
+      latitude: ride.toLat!,
+      longitude: ride.toLng!,
+      stopOrder: orderedPickups.length + 1,
+      type: 'END',
+    })
+    return stops
+  }, [ride, orderedPickups])
+
+  /** Оставащ маршрут след „взех го“ за N пътника: координати и спирки за картата. */
+  const driverRouteSliced = useMemo(() => {
+    if (!driverRoute?.coordinates?.length || driverWaypointIndices.length === 0) return null
+    const fromIdx = driverWaypointIndices[driverPickedUpCount] ?? 0
+    const coordinates = driverRoute.coordinates.slice(fromIdx) as [number, number][]
+    const stops =
+      driverPickedUpCount === 0
+        ? driverRouteFullStops
+        : driverRouteFullStops.slice(driverPickedUpCount + 1)
+    return { coordinates, stops }
+  }, [driverRoute?.coordinates, driverWaypointIndices, driverPickedUpCount, driverRouteFullStops])
 
   useEffect(() => {
     if (!rideId || isNaN(rideId)) {
@@ -74,113 +189,85 @@ export function RideDetail() {
 
   useEffect(() => {
     if (!rideId || isNaN(rideId) || !token) return
-    getBookingsForRide(rideId, token).then((data) => {
-      setBookings(data)
-      if (ride && user && ride.driverId === user.id) {
-        const active = data.filter((b) => b.status === 'PENDING' || b.status === 'APPROVED')
-        const points = active
-          .filter((b) => b.pickupLat != null && b.pickupLng != null)
-          .map((b) => ({
-            lat: b.pickupLat!,
-            lng: b.pickupLng!,
-            label: b.passengerName ?? b.pickupAddress ?? 'Качване',
-          }))
-        setPickupPoints(points)
-      }
-    })
+    getBookingsForRide(rideId, token).then(setBookings)
     getMyBookings(token).then((list) => {
       const b = list.find((x) => x.rideId === rideId)
       setMyBooking(b ?? null)
-      if (ride && user && ride.driverId !== user.id) {
-        const active = b && (b.status === 'PENDING' || b.status === 'APPROVED')
-        if (active && b.pickupLat != null && b.pickupLng != null) {
-          setPickupPoints([
-            { lat: b.pickupLat, lng: b.pickupLng, label: b.passengerName ?? b.pickupAddress ?? 'Качване' },
-          ])
-        } else {
-          setPickupPoints([])
-        }
-      }
     })
-  }, [rideId, token, ride, user])
+  }, [rideId, token])
 
   useEffect(() => {
-    const q = searchQuery.trim()
-    if (q.length < 4) {
-      setSearchResults([])
+    if (isDriver && chatPartners.length > 0 && (chatOtherUserId == null || !chatPartners.some((p) => p.id === chatOtherUserId))) {
+      setChatOtherUserId(chatPartners[0].id)
+    }
+    if (!isDriver && ride) setChatOtherUserId(null)
+  }, [isDriver, ride, chatPartners, chatOtherUserId])
+
+  useEffect(() => {
+    if (!canRate || ratingSent || ratingToUserId != null) return
+    if (!ride) return
+    if (isDriver) {
+      const b = bookings.find((x) => x.status === 'APPROVED' || x.status === 'FINISHED')
+      if (b) setRatingToUserId(b.passengerId)
+    } else {
+      setRatingToUserId(ride.driverId)
+    }
+  }, [canRate, ratingSent, ride, isDriver, bookings, ratingToUserId])
+
+  useEffect(() => {
+    if (!rideId || !token || otherUserId == null) {
+      setChatMessages([])
       return
     }
-    let cancelled = false
-    const t = setTimeout(() => {
-      setSearchLoading(true)
-      setSearchError('')
-      searchAddress(q, token)
-        .then((results) => {
-          if (!cancelled) setSearchResults(results)
-        })
-        .catch((err) => {
-          if (!cancelled) setSearchError(err instanceof Error ? err.message : 'Грешка при търсене')
-        })
-        .finally(() => {
-          if (!cancelled) setSearchLoading(false)
-        })
-    }, 500)
-    return () => { cancelled = true; clearTimeout(t) }
-  }, [searchQuery, token])
+    getConversation(rideId, otherUserId, token).then(setChatMessages).catch(() => setChatMessages([]))
+  }, [rideId, token, otherUserId])
 
-  const handleMapClick = (lat: number, lng: number) => {
-    setPendingPickup({ lat, lng })
-    setPendingPickupAddress('')
-    setPickupError('')
-  }
+  useEffect(() => {
+    if (!rideId || isNaN(rideId) || !token) return
+    getRideRoute(rideId, token).then(setRouteData).catch(() => setRouteData(null))
+  }, [rideId, token])
 
-  const handleSelectSearchResult = (r: GeocodingResult) => {
-    console.log('[geocode] selected', {
-      provider: r.provider ?? undefined,
-      displayName: r.displayName,
-      osmType: r.osmType ?? undefined,
-      lat: r.lat,
-      lng: r.lng,
-    })
-    setPendingPickup({ lat: r.lat, lng: r.lng })
-    setPendingPickupAddress(r.displayName)
-    setSearchResults([])
-    setSearchQuery(r.displayName)
-    setSearchError('')
-  }
+  useEffect(() => {
+    if (!isDriver || !rideId || isNaN(rideId) || !token || !ride) return
+    const hasCoords = ride.fromLat != null && ride.fromLng != null && ride.toLat != null && ride.toLng != null
+    if (!hasCoords) return
+    setDriverRouteLoading(true)
+    getDriverRoute(rideId, token)
+      .then((data) => setDriverRoute(data?.coordinates?.length ? { coordinates: data.coordinates } : null))
+      .catch(() => setDriverRoute(null))
+      .finally(() => setDriverRouteLoading(false))
+  }, [isDriver, rideId, token, ride?.id, bookings])
 
-  const handleSavePickup = async () => {
-    if (!pendingPickup || !token) return
-    setPickupSaving(true)
-    setPickupError('')
+  const handleSendMessage = async () => {
+    if (!token || !otherUserId || !chatInput.trim()) return
+    setChatSending(true)
     try {
-      let bookingId = hasActiveBooking ? myBooking!.id : undefined
-      if (!bookingId) {
-        const created = await createBooking(rideId, token)
-        setMyBooking(created)
-        bookingId = created.id
-      }
-      await setPickupLocation(
-        bookingId,
-        pendingPickup.lat,
-        pendingPickup.lng,
-        pendingPickupAddress || '',
-        token,
-        { pickupNeighborhood: pickupNeighborhood.trim() || null, passengerNote: pickupNote.trim() || null }
-      )
-      const list = await getMyBookings(token)
-      const updated = list.find((b) => b.rideId === rideId)
-      if (updated) setMyBooking(updated)
-      setPendingPickup(null)
-      setPendingPickupAddress('')
-      setPickupNeighborhood('')
-      setPickupNote('')
-      setSelectMode(false)
-      getBookingsForRide(rideId, token).then(setBookings)
+      const sent = await sendMessage({ rideId, receiverId: otherUserId, content: chatInput.trim() }, token)
+      setChatMessages((prev) => [...prev, sent])
+      setChatInput('')
     } catch (err) {
-      setPickupError(err instanceof Error ? err.message : 'Грешка при запазване')
+      addToast(err instanceof Error ? err.message : 'Грешка при изпращане', 'error')
     } finally {
-      setPickupSaving(false)
+      setChatSending(false)
+    }
+  }
+
+  const handleSubmitRating = async () => {
+    if (!token || ratingToUserId == null) return
+    setRatingSubmitting(true)
+    try {
+      await createRating(
+        { toUserId: ratingToUserId, rideId, score: ratingScore, comment: ratingComment.trim() || undefined },
+        token
+      )
+      addToast('Оценката е изпратена.', 'success')
+      setRatingSent(true)
+      setRatingToUserId(null)
+      setRatingComment('')
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Грешка при изпращане на оценка', 'error')
+    } finally {
+      setRatingSubmitting(false)
     }
   }
 
@@ -190,11 +277,126 @@ export function RideDetail() {
     try {
       await cancelBooking(myBooking.id, token)
       setMyBooking(null)
-      setPickupPoints([])
       setBookings(await getBookingsForRide(rideId, token))
       setRide((r) => r ? { ...r, availableSeats: r.availableSeats + 1 } : null)
     } finally {
       setBookingActionId(null)
+    }
+  }
+
+  const handleApprove = async (bookingId: number) => {
+    if (!token) return
+    setApproveRejectBookingId(bookingId)
+    try {
+      await approveBooking(bookingId, token)
+      setBookings(await getBookingsForRide(rideId, token))
+      setRide((r) => r ? { ...r, availableSeats: Math.max(0, (r.availableSeats ?? 0) - 1) } : null)
+      addToast('Резервацията е одобрена.', 'success')
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Грешка при одобряване', 'error')
+    } finally {
+      setApproveRejectBookingId(null)
+    }
+  }
+
+  const handleReject = async (bookingId: number) => {
+    if (!token) return
+    setApproveRejectBookingId(bookingId)
+    try {
+      await rejectBooking(bookingId, token)
+      setBookings(await getBookingsForRide(rideId, token))
+      addToast('Резервацията е отхвърлена.', 'success')
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Грешка при отхвърляне', 'error')
+    } finally {
+      setApproveRejectBookingId(null)
+    }
+  }
+
+  const handleDriverComingTo = async (passengerId: number) => {
+    if (!token || !user) return
+    setDriverComingToPassengerId(passengerId)
+    try {
+      const sent = await sendMessage(
+        { rideId, receiverId: passengerId, content: 'Идвам към теб, приготви се.' },
+        token
+      )
+      setChatMessages((prev) => [...prev, sent])
+      setChatOtherUserId(passengerId)
+      addToast('Съобщението „Идвам към теб“ е изпратено.', 'success')
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Грешка при изпращане', 'error')
+    } finally {
+      setDriverComingToPassengerId(null)
+    }
+  }
+
+  const handleValidatePoints = async () => {
+    if (!pickupDropoffPickup || !pickupDropoffDropoff || !token) return
+    setValidatingPoints(true)
+    setValidatedPoints(null)
+    try {
+      let coords = routeData?.coordinates
+      if (!coords?.length) {
+        addToast('Зареждане на маршрут…', 'info')
+        const route = await getRideRoute(rideId, token)
+        setRouteData(route)
+        coords = route?.coordinates
+      }
+      if (!coords?.length) {
+        addToast('Маршрутът не е наличен за това пътуване. Опитайте по-късно.', 'error')
+        return
+      }
+      const res = await apiValidatePoints(
+        rideId,
+        {
+          pickupLat: pickupDropoffPickup.lat,
+          pickupLng: pickupDropoffPickup.lng,
+          dropoffLat: pickupDropoffDropoff.lat,
+          dropoffLng: pickupDropoffDropoff.lng,
+        },
+        token
+      )
+      setValidatedPoints(res)
+      if (res.valid && res.suggestedPickupLat != null && res.suggestedPickupLng != null && res.suggestedDropoffLat != null && res.suggestedDropoffLng != null) {
+        setPickupDropoffPickup({ lat: res.suggestedPickupLat, lng: res.suggestedPickupLng })
+        setPickupDropoffDropoff({ lat: res.suggestedDropoffLat, lng: res.suggestedDropoffLng })
+      }
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Грешка при валидиране', 'error')
+    } finally {
+      setValidatingPoints(false)
+    }
+  }
+
+  const handleBookWithStops = async (
+    pickupLat: number,
+    pickupLng: number,
+    dropoffLat: number,
+    dropoffLng: number,
+    seatsReserved: number
+  ) => {
+    if (!token) return
+    try {
+      const created = await bookRide(
+        rideId,
+        { pickupLat, pickupLng, dropoffLat, dropoffLng, seatsReserved },
+        token
+      )
+      setMyBooking(created)
+      setPickupDropoffPickup(null)
+      setPickupDropoffDropoff(null)
+      setValidatedPoints(null)
+      setRouteData(null)
+      getRideRoute(rideId, token).then(setRouteData).catch(() => {})
+      const list = await getMyBookings(token)
+      const b = list.find((x) => x.rideId === rideId)
+      if (b) setMyBooking(b)
+      setBookings(await getBookingsForRide(rideId, token))
+      setRide((r) => r ? { ...r, availableSeats: Math.max(0, r.availableSeats - seatsReserved) } : null)
+      addToast('Резервацията е създадена. Чака одобрение от шофьора.', 'success')
+    } catch (err) {
+      throw err
     }
   }
 
@@ -226,149 +428,398 @@ export function RideDetail() {
         {ride.carDetails && <> · {ride.carDetails}</>}
       </div>
 
-      {!isDriver && (
-        <>
-          {!hasActiveBooking ? (
-            <p style={{ marginBottom: 16 }}>
-              {ride.availableSeats <= 0 ? (
-                <span style={{ color: '#b91c1c', fontWeight: 500 }}>Няма свободни места. Резервациите са затворени за това пътуване.</span>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setSelectMode(true)}
-                    className="btn-primary"
-                    style={{ padding: '10px 20px', cursor: 'pointer' }}
-                  >
-                    Резервирай място
-                  </button>
-                  {myBooking && (myBooking.status === 'CANCELED' || myBooking.status === 'REJECTED') && (
-                    <span style={{ marginLeft: 12, fontSize: 14, color: '#6b7280' }}>
-                      (Предишната резервация е отменена – можете да резервирате отново.)
-                    </span>
-                  )}
-                </>
-              )}
-            </p>
-          ) : (
-            <p style={{ marginBottom: 16, color: '#166534' }}>
-              Имате резервация (статус: {myBooking!.status === 'PENDING' ? 'Чака одобрение' : 'Одобрена'}).
-              {myBooking!.status === 'APPROVED' && (
-                <button
-                  type="button"
-                  onClick={() => setSelectMode(true)}
-                  style={{ marginLeft: 12, padding: '6px 12px', cursor: 'pointer' }}
-                >
-                  Избери/промени място за качване
-                </button>
-              )}
+      {/* Един блок: карта + резервация / одобряване / отмяна */}
+      <div style={{ marginTop: 24, padding: 16, border: '1px solid #e2e8f0', borderRadius: 12, background: '#f8fafc' }}>
+        <h2 style={{ fontSize: '1.1rem', marginBottom: 12 }}>Карта и резервации</h2>
+
+        {!isDriver && ride.availableSeats > 0 && !hasActiveBooking && (
+          <p style={{ marginBottom: 12, fontSize: 14, color: '#64748b' }}>
+            Изберете място за качване и слизане на картата (бутоните по-долу), натиснете „Провери точките“, след което „Резервирай място“.
+          </p>
+        )}
+
+        <div style={{ position: 'relative' }}>
+          {!isDriver && ride.availableSeats > 0 && !hasActiveBooking && selectingModePickupDropoff && (
+            <p style={{ marginBottom: 8, fontSize: 14, fontWeight: 600, color: '#2563eb' }}>
+              {selectingModePickupDropoff === 'pickup' ? 'Режим: избор на място за качване – кликнете на картата' : 'Режим: избор на място за слизане – кликнете на картата'}
             </p>
           )}
+          <RideMap
+            routeCoordinates={routeData?.coordinates ?? []}
+            stops={routeData?.stops ?? []}
+            pickupPoint={pickupDropoffPickup}
+            suggestedPoint={
+              pickupValidation && !pickupValidation.valid && pickupValidation.suggestedLat != null && pickupValidation.suggestedLng != null
+                ? { lat: pickupValidation.suggestedLat, lng: pickupValidation.suggestedLng }
+                : validatedPoints && !validatedPoints.valid && validatedPoints.suggestedPickupLat != null && validatedPoints.suggestedPickupLng != null
+                  ? { lat: validatedPoints.suggestedPickupLat, lng: validatedPoints.suggestedPickupLng }
+                  : null
+            }
+          onPickupChange={(lat, lng) => {
+            setPickupDropoffPickup({ lat, lng })
+            setValidatedPoints(null)
+            setPickupValidation(null)
+            if (!token) return
+            setValidatingPickupPoint(true)
+            apiValidatePoint(rideId, { lat, lng, type: 'PICKUP' }, token)
+              .then((res) => setPickupValidation(res))
+              .catch(() => setPickupValidation(null))
+              .finally(() => setValidatingPickupPoint(false))
+          }}
+          onUseSuggestedPoint={() => {
+            if (pickupValidation?.suggestedLat != null && pickupValidation?.suggestedLng != null) {
+              setPickupDropoffPickup({ lat: pickupValidation.suggestedLat, lng: pickupValidation.suggestedLng })
+              setPickupValidation(null)
+            } else if (validatedPoints?.suggestedPickupLat != null && validatedPoints?.suggestedPickupLng != null) {
+              setPickupDropoffPickup({ lat: validatedPoints.suggestedPickupLat, lng: validatedPoints.suggestedPickupLng })
+              setValidatedPoints(null)
+            }
+          }}
+            dropoffPoint={pickupDropoffDropoff}
+            onDropoffChange={(lat, lng) => {
+              setPickupDropoffDropoff({ lat, lng })
+              setValidatedPoints(null)
+            }}
+            selectingMode={selectingModePickupDropoff}
+            allowPickupSelection={!isDriver && ride.availableSeats > 0 && !hasActiveBooking}
+            height={320}
+          />
+          {!routeData && (
+            <p style={{ position: 'absolute', top: 12, left: 12, margin: 0, padding: '8px 12px', background: 'rgba(255,255,255,0.95)', borderRadius: 8, fontSize: 14, zIndex: 1000, boxShadow: '0 1px 4px rgba(0,0,0,0.1)' }}>
+              Маршрутът се зарежда…
+            </p>
+          )}
+          {routeData && (!routeData.coordinates || routeData.coordinates.length === 0) && (
+            <p style={{ position: 'absolute', top: 12, left: 12, margin: 0, padding: '8px 12px', background: 'rgba(255,255,255,0.95)', borderRadius: 8, fontSize: 14, zIndex: 1000, boxShadow: '0 1px 4px rgba(0,0,0,0.1)' }}>
+              Няма маршрут за това пътуване (липсват координати).
+            </p>
+          )}
+        </div>
+        {validatingPickupPoint && (
+          <p style={{ marginTop: 8, fontSize: 14, color: '#64748b' }}>Проверка на точката за качване…</p>
+        )}
+        {pickupValidation && !validatingPickupPoint && (
+          <p style={{ marginTop: 8, fontSize: 14, color: pickupValidation.valid ? '#166534' : '#b91c1c' }}>
+            {pickupValidation.valid ? 'Точката е близо до маршрута.' : pickupValidation.message}
+          </p>
+        )}
 
-          {selectMode && (
-            <div style={{ marginBottom: 16 }}>
-              <p style={{ marginBottom: 8, fontSize: 14, color: '#374151' }}>
-                Търсете адрес (мин. 4 символа) или кликнете на картата.
+          {!isDriver && ride.availableSeats <= 0 && (
+            <p style={{ marginTop: 12, color: '#b91c1c', fontWeight: 500 }}>Няма свободни места. Резервациите са затворени за това пътуване.</p>
+          )}
+
+          {!isDriver && ride.availableSeats > 0 && !hasActiveBooking && (
+            <>
+              {routeData === null && (
+                <p style={{ marginTop: 12, fontSize: 14, color: '#f59e0b' }}>
+                  Маршрутът се зарежда. След зареждане изберете точки за качване и слизане на картата.
+                </p>
+              )}
+              {routeData && (!routeData.coordinates || routeData.coordinates.length === 0) && (
+                <p style={{ marginTop: 12, fontSize: 14, color: '#b91c1c' }}>
+                  Няма наличен маршрут за това пътуване (липсват координати). Резервация с избор на точки не е възможна.
+                </p>
+              )}
+              <PickupDropoffSelector
+                pickup={pickupDropoffPickup}
+                dropoff={pickupDropoffDropoff}
+                validated={validatedPoints}
+                validating={validatingPoints}
+                onValidate={handleValidatePoints}
+                selectingMode={selectingModePickupDropoff}
+                onSetSelectingMode={setSelectingModePickupDropoff}
+                canValidate={!!pickupDropoffPickup && !!pickupDropoffDropoff}
+                routeLoaded={!!routeData?.coordinates?.length}
+                onSwapPickupDropoff={() => {
+                  if (pickupDropoffPickup && pickupDropoffDropoff) {
+                    setPickupDropoffPickup(pickupDropoffDropoff)
+                    setPickupDropoffDropoff(pickupDropoffPickup)
+                    setValidatedPoints(null)
+                  }
+                }}
+                showSwapButton={Boolean(validatedPoints && !validatedPoints.valid && validatedPoints.message?.includes('преди мястото за слизане'))}
+              />
+              <RideBookingPanel
+                validated={validatedPoints}
+                suggestedPickup={
+                  validatedPoints?.valid
+                    ? (validatedPoints.suggestedPickupLat != null && validatedPoints.suggestedPickupLng != null
+                        ? { lat: validatedPoints.suggestedPickupLat, lng: validatedPoints.suggestedPickupLng }
+                        : pickupDropoffPickup)
+                    : null
+                }
+                suggestedDropoff={
+                  validatedPoints?.valid
+                    ? (validatedPoints.suggestedDropoffLat != null && validatedPoints.suggestedDropoffLng != null
+                        ? { lat: validatedPoints.suggestedDropoffLat, lng: validatedPoints.suggestedDropoffLng }
+                        : pickupDropoffDropoff)
+                    : null
+                }
+                onBook={handleBookWithStops}
+                disabled={!token}
+              />
+            </>
+          )}
+
+          {!isDriver && hasActiveBooking && (
+            <div style={{ marginTop: 16 }}>
+              <p style={{ marginBottom: 8, color: '#166534' }}>
+                Имате резервация (статус: {myBooking!.status === 'PENDING' ? 'Чака одобрение' : 'Одобрена'}).
               </p>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="напр. ул. Цар Калоян 80, Пазарджик"
-                  style={{ flex: 1, minWidth: 200, padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8 }}
-                />
-                <button
-                  type="button"
-                  onClick={() => { setSelectMode(false); setPendingPickup(null); setPendingPickupAddress(''); setSearchResults([]); setPickupNeighborhood(''); setPickupNote('') }}
-                  style={{ padding: '8px 16px', cursor: 'pointer' }}
-                >
-                  Отказ от избор
-                </button>
-              </div>
-              <label style={{ display: 'block', marginTop: 12, marginBottom: 4, fontSize: 14 }}>
-                Квартал (напр. за качване в града на тръгване)
-              </label>
-              <input
-                type="text"
-                value={pickupNeighborhood}
-                onChange={(e) => setPickupNeighborhood(e.target.value)}
-                placeholder="напр. Лозенец, Център, Младост"
-                style={{ width: '100%', maxWidth: 400, padding: '10px 12px', marginBottom: 12, border: '1px solid #d1d5db', borderRadius: 8 }}
-              />
-              <label style={{ display: 'block', marginBottom: 4, fontSize: 14 }}>
-                Бележка (по желание)
-              </label>
-              <textarea
-                value={pickupNote}
-                onChange={(e) => setPickupNote(e.target.value)}
-                placeholder="Допълнителна информация за шофьора"
-                rows={2}
-                style={{ width: '100%', maxWidth: 500, padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8 }}
-              />
-              {searchError && <p style={{ color: '#b91c1c', fontSize: 14 }}>{searchError}</p>}
-              {searchLoading && <p style={{ fontSize: 14, color: '#6b7280' }}>Търсене...</p>}
-              {searchResults.length > 0 && (
-                <ul style={{ margin: '8px 0 0 0', padding: 0, listStyle: 'none', maxHeight: 220, overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: 6, background: '#fff' }}>
-                  {searchResults.map((r, i) => (
-                    <li key={i}>
-                      <button
-                        type="button"
-                        onClick={() => handleSelectSearchResult(r)}
-                        style={{ width: '100%', textAlign: 'left', padding: '10px 12px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 14 }}
-                      >
-                        {r.displayName}
-                      </button>
+              <button
+                type="button"
+                onClick={handleCancel}
+                disabled={bookingActionId !== null}
+                style={{ padding: '8px 16px', cursor: 'pointer', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 8 }}
+              >
+                {bookingActionId !== null ? 'Отмяна…' : 'Отмени резервацията'}
+              </button>
+            </div>
+          )}
+
+          {isDriver && (
+            <div style={{ marginTop: 16 }}>
+              <p style={{ marginBottom: 8, fontWeight: 600 }}>Чакащи резервации</p>
+              {bookings.filter((b) => b.status === 'PENDING').length === 0 ? (
+                <p style={{ fontSize: 14, color: '#64748b' }}>Няма чакащи резервации.</p>
+              ) : (
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                  {bookings.filter((b) => b.status === 'PENDING').map((b) => (
+                    <li key={b.id} style={{ marginBottom: 12, padding: 12, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8 }}>
+                      <span>{b.passengerName ?? 'Пътник'} – чака одобрение</span>
+                      <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                        <button
+                          type="button"
+                          onClick={() => handleApprove(b.id)}
+                          disabled={approveRejectBookingId !== null}
+                          style={{ padding: '6px 12px', fontSize: 14, background: '#16a34a', color: '#fff', border: 'none', borderRadius: 6, cursor: approveRejectBookingId !== null ? 'not-allowed' : 'pointer' }}
+                        >
+                          {approveRejectBookingId === b.id ? 'Одобряване…' : 'Одобри'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleReject(b.id)}
+                          disabled={approveRejectBookingId !== null}
+                          style={{ padding: '6px 12px', fontSize: 14, background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, cursor: approveRejectBookingId !== null ? 'not-allowed' : 'pointer' }}
+                        >
+                          {approveRejectBookingId === b.id ? 'Отхвърляне…' : 'Отхвърли'}
+                        </button>
+                      </div>
                     </li>
                   ))}
                 </ul>
               )}
-              {pendingPickup && (pendingPickupAddress || searchQuery.trim()) && (
-                <p style={{ margin: '12px 0 0 0', padding: '10px 12px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, fontSize: 14, color: '#166534' }}>
-                  <strong>Избран адрес:</strong> {pendingPickupAddress || searchQuery.trim()}
-                </p>
-              )}
-              <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={handleSavePickup}
-                  disabled={!pendingPickup || pickupSaving}
-                  style={{ padding: '8px 16px', cursor: pendingPickup && !pickupSaving ? 'pointer' : 'not-allowed' }}
-                >
-                  {pickupSaving ? 'Запазване...' : 'Запази мястото'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setSelectMode(false); setPendingPickup(null); setPendingPickupAddress(''); setSearchResults([]) }}
-                  style={{ padding: '8px 16px', cursor: 'pointer' }}
-                >
-                  Отказ
-                </button>
-              </div>
-              {pickupError && <p className="form-error" style={{ marginTop: 8 }}>{pickupError}</p>}
             </div>
           )}
-        </>
+        </div>
+
+      {isDriver && (
+        <div style={{ marginTop: 24, padding: 16, border: '1px solid #e2e8f0', borderRadius: 12, background: '#f0f9ff' }}>
+          <h2 style={{ fontSize: '1.1rem', marginBottom: 12 }}>Маршрут при тръгване</h2>
+          {ride.fromLat == null || ride.fromLng == null || ride.toLat == null || ride.toLng == null ? (
+            <p style={{ fontSize: 14, color: '#64748b', marginBottom: 0 }}>
+              За да се покаже картата и маршрутът при забиране, пътуването трябва да има зададени начална и крайна точка (координати). Те се попълват автоматично при създаване на пътуване от „Създай пътуване“ при избор на градове. Ако това пътуване е създадено без координати, създайте ново пътуване с избрани градове или редактирайте това.
+            </p>
+          ) : (
+            <>
+          {driverRouteLoading && <p style={{ marginBottom: 12, fontSize: 14, color: '#64748b' }}>Зареждане на маршрута…</p>}
+          {!driverRouteLoading && driverRoute && driverRouteSliced && (
+            <>
+              <div style={{ marginBottom: 16 }}>
+                <RideMap
+                  mapKey="driver-route-map"
+                  routeCoordinates={driverRouteSliced.coordinates}
+                  stops={driverRouteSliced.stops}
+                  pickupPoint={null}
+                  suggestedPoint={null}
+                  onPickupChange={() => {}}
+                  allowPickupSelection={false}
+                  height={320}
+                />
+              </div>
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0, marginBottom: 12 }}>
+                <li style={{ marginBottom: 8, fontSize: 14, color: '#64748b' }}>
+                  Старт: {ride.fromCity}
+                </li>
+                {orderedPickups.map((b, i) => (
+                  <li
+                    key={b.id}
+                    style={{
+                      marginBottom: 8,
+                      padding: 10,
+                      background: i < driverPickedUpCount ? '#f0fdf4' : '#fff',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 8,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: 8,
+                    }}
+                  >
+                    <span style={{ fontWeight: i === driverPickedUpCount ? 600 : 400 }}>
+                      {i + 1}. {i < driverPickedUpCount ? 'Готово ✓ ' : 'Забраване: '}
+                      {b.passengerName ?? 'Пътник'}
+                      {i >= driverPickedUpCount && (b.pickupAddress || b.pickupNeighborhood) && ` – ${b.pickupAddress || b.pickupNeighborhood}`}
+                      {i >= driverPickedUpCount && !b.pickupAddress && !b.pickupNeighborhood && ' – на картата'}
+                    </span>
+                    <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {i >= driverPickedUpCount && (
+                        <button
+                          type="button"
+                          onClick={() => handleDriverComingTo(b.passengerId)}
+                          disabled={driverComingToPassengerId !== null}
+                          style={{
+                            padding: '6px 12px',
+                            fontSize: 14,
+                            background: '#0ea5e9',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: 8,
+                            cursor: driverComingToPassengerId !== null ? 'not-allowed' : 'pointer',
+                          }}
+                        >
+                          {driverComingToPassengerId === b.passengerId ? 'Изпращане…' : 'Идвам към теб'}
+                        </button>
+                      )}
+                      {i === driverPickedUpCount && (
+                        <button
+                          type="button"
+                          onClick={() => setDriverPickedUpCount((c) => c + 1)}
+                          style={{
+                            padding: '6px 14px',
+                            fontSize: 14,
+                            background: '#16a34a',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: 8,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Взех го
+                        </button>
+                      )}
+                    </span>
+                  </li>
+                ))}
+                <li style={{ marginTop: 8, fontSize: 14, color: '#64748b' }}>
+                  Край: {ride.toCity}
+                </li>
+              </ul>
+              <button
+                type="button"
+                onClick={() => {
+                  const pts = driverWaypoints
+                  if (pts.length < 2) return
+                  const [oLat, oLng] = pts[0]
+                  const [dLat, dLng] = pts[pts.length - 1]
+                  const waypoints = pts.slice(1, -1).map(([lat, lng]) => `${lat},${lng}`).join('|')
+                  const url = new URL('https://www.google.com/maps/dir/')
+                  url.searchParams.set('api', '1')
+                  url.searchParams.set('origin', `${oLat},${oLng}`)
+                  url.searchParams.set('destination', `${dLat},${dLng}`)
+                  if (waypoints) url.searchParams.set('waypoints', waypoints)
+                  window.open(url.toString(), '_blank')
+                }}
+                style={{
+                  padding: '10px 20px',
+                  fontSize: 15,
+                  background: '#2563eb',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                }}
+              >
+                Тръгвам – отвори в навигация
+              </button>
+            </>
+          )}
+          {!driverRouteLoading && driverRoute && !driverRoute.coordinates?.length && (
+            <p style={{ fontSize: 14, color: '#64748b' }}>Няма наличен маршрут за зареждане (липсват координати или точки).</p>
+          )}
+            </>
+          )}
+        </div>
       )}
 
-      <RideMap
-        ride={ride}
-        pickupPoints={pickupPoints}
-        pendingPickup={pendingPickup}
-        onPickupClick={handleMapClick}
-        selectPickupMode={selectMode}
-      />
+      {canChat && otherUserId != null && (
+        <div style={{ marginTop: 32, padding: 16, background: '#f8fafc', borderRadius: 12, border: '1px solid #e2e8f0' }}>
+          <h2 style={{ fontSize: '1.1rem', marginBottom: 12 }}>Съобщения</h2>
+          {isDriver && chatPartners.length > 1 && (
+            <label style={{ display: 'block', marginBottom: 8, fontSize: 14 }}>
+              Разговор с:
+              <select
+                value={chatOtherUserId ?? ''}
+                onChange={(e) => setChatOtherUserId(Number(e.target.value))}
+                style={{ marginLeft: 8, padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 8 }}
+              >
+                {chatPartners.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          <div style={{ maxHeight: 240, overflowY: 'auto', marginBottom: 12, padding: 12, background: '#fff', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+            {chatMessages.length === 0 ? (
+              <p style={{ color: '#64748b', fontSize: 14 }}>Няма съобщения. Напишете първо.</p>
+            ) : (
+              chatMessages.map((m) => (
+                <div key={m.id} style={{ marginBottom: 8, fontSize: 14 }}>
+                  <strong>{m.senderName}:</strong> {m.content}
+                  <span style={{ marginLeft: 8, color: '#94a3b8', fontSize: 12 }}>
+                    {formatDateTime(m.sentAt)}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              type="text"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
+              placeholder="Напишете съобщение..."
+              style={{ flex: 1, padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8 }}
+            />
+            <button type="button" onClick={handleSendMessage} disabled={chatSending || !chatInput.trim()} style={{ padding: '10px 20px', cursor: 'pointer' }}>
+              {chatSending ? 'Изпращане...' : 'Изпрати'}
+            </button>
+          </div>
+        </div>
+      )}
 
-      {!isDriver && hasActiveBooking && (
-        <div style={{ marginTop: 24 }}>
-          <button
-            type="button"
-            onClick={handleCancel}
-            disabled={bookingActionId !== null}
-            style={{ padding: '8px 16px', cursor: 'pointer', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 8 }}
-          >
-            Отмени резервацията
-          </button>
+      {canRate && !ratingSent && ratingToUserId != null && (
+        <div style={{ marginTop: 32, padding: 16, background: '#f0fdf4', borderRadius: 12, border: '1px solid #86efac' }}>
+          <h2 style={{ fontSize: '1.1rem', marginBottom: 12 }}>Оцени пътуването</h2>
+          <p style={{ marginBottom: 8, fontSize: 14 }}>
+            {isDriver ? 'Оценете пътника си:' : 'Оценете шофьора:'}
+          </p>
+              <label style={{ display: 'block', marginBottom: 8, fontSize: 14 }}>
+                Оценка (1–5):
+                <select
+                  value={ratingScore}
+                  onChange={(e) => setRatingScore(Number(e.target.value))}
+                  style={{ marginLeft: 8, padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 8 }}
+                >
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <option key={n} value={n}>{n} ★</option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: 'block', marginBottom: 12, fontSize: 14 }}>
+                Коментар (по желание):
+                <textarea
+                  value={ratingComment}
+                  onChange={(e) => setRatingComment(e.target.value)}
+                  rows={2}
+                  style={{ display: 'block', width: '100%', maxWidth: 400, marginTop: 4, padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8 }}
+                />
+              </label>
+              <button type="button" onClick={handleSubmitRating} disabled={ratingSubmitting} style={{ padding: '8px 16px', cursor: 'pointer' }}>
+                {ratingSubmitting ? 'Изпращане...' : 'Изпрати оценка'}
+              </button>
         </div>
       )}
     </div>

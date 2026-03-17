@@ -1,154 +1,306 @@
-import { useMemo, useEffect } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from 'react-leaflet'
+import { useMemo, useCallback, useEffect, useRef } from 'react'
+import { MapContainer, TileLayer, Marker, Polyline, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
-import type { RideDto } from '../types/api'
+import type { RideStopDto } from '../types/api'
 import 'leaflet/dist/leaflet.css'
 
-const defaultCenter: [number, number] = [42.7339, 25.4858]
+const DEFAULT_CENTER: [number, number] = [42.7339, 25.4858]
+const DEFAULT_ZOOM = 11
+const ROUTE_COLOR = '#2563eb'
+const ROUTE_WEIGHT = 4
 
-const cityCoords: Record<string, [number, number]> = {
-  Благоевград: [42.0167, 23.0944],
-  Бургас: [42.5048, 27.4626],
-  Варна: [43.2141, 27.9147],
-  'Велико Търново': [43.0812, 25.6291],
-  Видин: [43.9992, 22.8725],
-  Враца: [43.21, 23.5625],
-  Габрово: [42.8747, 25.3342],
-  Добрич: [43.5667, 27.8333],
-  Кърджали: [41.65, 25.3667],
-  Кюстендил: [42.2839, 22.6911],
-  Ловеч: [43.1333, 24.7167],
-  Монтана: [43.4125, 23.2253],
-  Пазарджик: [42.2, 24.3333],
-  Перник: [42.6, 23.0333],
-  Плевен: [43.417, 24.617],
-  Пловдив: [42.1354, 24.7453],
-  Разград: [43.5333, 26.5167],
-  Русе: [43.8476, 25.9532],
-  Силистра: [44.1167, 27.2667],
-  Сливен: [42.6858, 26.3292],
-  Смолян: [41.5853, 24.6919],
-  София: [42.6977, 23.3219],
-  'Стара Загора': [42.4257, 25.6345],
-  Търговище: [43.25, 26.5833],
-  Хасково: [41.9344, 25.5556],
-  Шумен: [43.2706, 26.9229],
-  Ямбол: [42.4833, 26.5],
+const STOP_TYPE_LABELS: Record<string, string> = {
+  START: 'Старт',
+  END: 'Край',
+  PICKUP: 'Качване',
+  DROPOFF: 'Слизане',
 }
 
-function getCoords(lat?: number, lng?: number, city?: string): [number, number] | null {
-  if (lat != null && lng != null && !Number.isNaN(lat) && !Number.isNaN(lng)) {
-    return [lat, lng]
+function createStopIcon(type: string): L.DivIcon {
+  const colors: Record<string, string> = {
+    START: '#16a34a',
+    END: '#dc2626',
+    PICKUP: '#2563eb',
+    DROPOFF: '#ea580c',
   }
-  if (city && cityCoords[city]) return cityCoords[city]
-  return null
+  const color = colors[type] ?? '#6b7280'
+  return L.divIcon({
+    className: 'ride-stop-marker',
+    html: `<div style="width:24px;height:24px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.3)"></div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  })
 }
 
-const defaultIcon = L.icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
+const PICKUP_ICON = L.divIcon({
+  className: 'pickup-marker',
+  html: '<div style="width:28px;height:28px;border-radius:50%;background:#2563eb;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3)"></div>',
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
 })
 
-const pickupIcon = L.icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
+const SUGGESTED_ICON = L.divIcon({
+  className: 'suggested-point-marker',
+  html: '<div style="width:22px;height:22px;border-radius:50%;background:#16a34a;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.3)"></div>',
+  iconSize: [22, 22],
+  iconAnchor: [11, 11],
 })
 
-function FitBounds({ points }: { points: [number, number][] }) {
+const DROPOFF_ICON = L.divIcon({
+  className: 'dropoff-marker',
+  html: '<div style="width:26px;height:26px;border-radius:50%;background:#ea580c;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3)"></div>',
+  iconSize: [26, 26],
+  iconAnchor: [13, 13],
+})
+
+function FitBounds({ points, zoom }: { points: [number, number][]; zoom?: number }) {
   const map = useMap()
+  const mountedRef = useRef(true)
   const bounds = useMemo(() => {
     if (points.length === 0) return null
     return L.latLngBounds(points)
   }, [points])
   useEffect(() => {
-    if (bounds && points.length > 0) {
-      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 12 })
+    mountedRef.current = true
+    if (!bounds || points.length === 0) return
+    const id = setTimeout(() => {
+      if (!mountedRef.current) return
+      try {
+        const container = map.getContainer?.()
+        if (!container || !document.contains(container)) return
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: zoom ?? 13 })
+      } catch {
+        // Map may be unmounted during Leaflet zoom (_leaflet_pos etc.)
+      }
+    }, 50)
+    return () => {
+      mountedRef.current = false
+      clearTimeout(id)
     }
-  }, [map, bounds, points.length])
+  }, [map, bounds, points.length, zoom])
+  return null
+}
+
+function MapResizeFix() {
+  const map = useMap()
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    const t = setTimeout(() => {
+      if (!mountedRef.current) return
+      try {
+        const container = map.getContainer?.()
+        if (!container || !document.contains(container)) return
+        map.invalidateSize()
+      } catch {
+        // Map may be unmounted
+      }
+    }, 150)
+    return () => {
+      mountedRef.current = false
+      clearTimeout(t)
+    }
+  }, [map])
   return null
 }
 
 function MapClickHandler({
-  selectPickupMode,
-  onPickupClick,
+  selectingMode,
+  onPickupChange,
+  onDropoffChange,
 }: {
-  selectPickupMode: boolean
-  onPickupClick?: (lat: number, lng: number) => void
+  selectingMode: 'pickup' | 'dropoff' | null
+  onPickupChange: (lat: number, lng: number) => void
+  onDropoffChange?: (lat: number, lng: number) => void
 }) {
   useMapEvents({
     click(e) {
-      if (selectPickupMode && onPickupClick) {
-        onPickupClick(e.latlng.lat, e.latlng.lng)
-      }
+      if (selectingMode === 'pickup') onPickupChange(e.latlng.lat, e.latlng.lng)
+      if (selectingMode === 'dropoff' && onDropoffChange) onDropoffChange(e.latlng.lat, e.latlng.lng)
     },
   })
   return null
 }
 
 export interface RideMapProps {
-  ride: RideDto
-  pickupPoints?: { lat: number; lng: number; label?: string }[]
-  pendingPickup?: { lat: number; lng: number } | null
-  onPickupClick?: (lat: number, lng: number) => void
-  selectPickupMode?: boolean
+  /** Координати на маршрута от GET /api/v1/rides/{id}/route */
+  routeCoordinates: [number, number][]
+  /** Спирки от същия endpoint */
+  stops: RideStopDto[]
+  /** Текуща избрана точка за качване (показва се като draggable marker) */
+  pickupPoint: { lat: number; lng: number } | null
+  /** Предложена от backend точка (suggestedLat, suggestedLng) */
+  suggestedPoint: { lat: number; lng: number } | null
+  /** Извиква се при клик на картата и при drag end на pickup marker. Родителят трябва да извика validate-point. */
+  onPickupChange: (lat: number, lng: number) => void
+  /** Извиква се при натискане на „Използвай предложената точка“. */
+  onUseSuggestedPoint?: () => void
+  /** Дали да се приема клик и drag за избор на място за качване */
+  allowPickupSelection?: boolean
+  /** Височина на картата в px */
+  height?: number
+  /** Режим на избор: pickup / dropoff (при null клик не прави нищо) */
+  selectingMode?: 'pickup' | 'dropoff' | null
+  /** Точка за слизане (опционално, за резервация с качване+слизане) */
+  dropoffPoint?: { lat: number; lng: number } | null
+  /** Извиква се при клик/драг за точка за слизане */
+  onDropoffChange?: (lat: number, lng: number) => void
+  /** Уникален ключ за MapContainer (използвай при втора карта на същата страница, напр. "driver-route-map") */
+  mapKey?: string
 }
 
-export function RideMap({ ride, pickupPoints = [], pendingPickup = null, onPickupClick, selectPickupMode = false }: RideMapProps) {
-  const from = getCoords((ride as { fromLat?: number }).fromLat, (ride as { fromLng?: number }).fromLng, ride.fromCity)
-  const to = getCoords((ride as { toLat?: number }).toLat, (ride as { toLng?: number }).toLng, ride.toCity)
-
+export function RideMap({
+  routeCoordinates,
+  stops,
+  pickupPoint,
+  suggestedPoint,
+  onPickupChange,
+  onUseSuggestedPoint,
+  allowPickupSelection = true,
+  height = 360,
+  selectingMode = null,
+  dropoffPoint = null,
+  onDropoffChange,
+  mapKey,
+}: RideMapProps) {
   const allPoints = useMemo(() => {
-    const pts: [number, number][] = []
-    if (from) pts.push(from)
-    if (to) pts.push(to)
-    pickupPoints.forEach((p) => pts.push([p.lat, p.lng]))
-    if (pendingPickup) pts.push([pendingPickup.lat, pendingPickup.lng])
+    const pts: [number, number][] = [...routeCoordinates]
+    stops.forEach((s) => pts.push([s.latitude, s.longitude]))
+    if (pickupPoint) pts.push([pickupPoint.lat, pickupPoint.lng])
+    if (dropoffPoint) pts.push([dropoffPoint.lat, dropoffPoint.lng])
+    if (suggestedPoint) pts.push([suggestedPoint.lat, suggestedPoint.lng])
     return pts
-  }, [from, to, pickupPoints, pendingPickup])
+  }, [routeCoordinates, stops, pickupPoint, dropoffPoint, suggestedPoint])
 
-  const center = from ?? to ?? defaultCenter
+  const center = useMemo((): [number, number] => {
+    if (routeCoordinates.length > 0) {
+      const first = routeCoordinates[0]
+      return [first[0], first[1]]
+    }
+    if (stops.length > 0) return [stops[0].latitude, stops[0].longitude]
+    return DEFAULT_CENTER
+  }, [routeCoordinates, stops])
+
+  const handlePickupDragEnd = useCallback(
+    (e: L.LeafletEvent) => {
+      const pos = (e.target as L.Marker).getLatLng()
+      onPickupChange(pos.lat, pos.lng)
+    },
+    [onPickupChange]
+  )
+
+  const handleDropoffDragEnd = useCallback(
+    (e: L.LeafletEvent) => {
+      if (!onDropoffChange) return
+      const pos = (e.target as L.Marker).getLatLng()
+      onDropoffChange(pos.lat, pos.lng)
+    },
+    [onDropoffChange]
+  )
 
   return (
-    <div style={{ height: 360, width: '100%', borderRadius: 8, overflow: 'hidden' }}>
-      <MapContainer center={center} zoom={7} style={{ height: '100%', width: '100%' }} scrollWheelZoom>
-        <MapClickHandler selectPickupMode={selectPickupMode} onPickupClick={onPickupClick} />
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-        {allPoints.length > 0 && <FitBounds points={allPoints} />}
-        {from && (
-          <Marker position={from} icon={defaultIcon}>
-            <Popup>От: {ride.fromCity}</Popup>
-          </Marker>
-        )}
-        {to && (
-          <Marker position={to} icon={defaultIcon}>
-            <Popup>До: {ride.toCity}</Popup>
-          </Marker>
-        )}
-        {from && to && <Polyline positions={[from, to]} color="#2563eb" weight={4} />}
-        {pickupPoints.map((p, i) => (
-          <Marker key={i} position={[p.lat, p.lng]} icon={pickupIcon}>
-            <Popup>{p.label ?? 'Място за качване'}</Popup>
-          </Marker>
-        ))}
-        {pendingPickup && (
-          <Marker position={[pendingPickup.lat, pendingPickup.lng]} icon={pickupIcon}>
-            <Popup>Избрано място – натисни „Запази мястото“</Popup>
-          </Marker>
-        )}
-      </MapContainer>
-      {selectPickupMode && (
-        <p style={{ margin: 8, fontSize: 14, color: '#666' }}>
-          Кликни на картата, за да избереш място за качване.
+    <div style={{ width: '100%' }}>
+      <div
+        className="ride-map-wrapper"
+        style={{
+          height: `${height}px`,
+          width: '100%',
+          minHeight: 280,
+          borderRadius: 8,
+          overflow: 'hidden',
+          position: 'relative',
+          background: '#e5e7eb',
+        }}
+      >
+        <MapContainer
+          key={mapKey ?? (routeCoordinates.length > 0 ? 'map-with-route' : 'map-initial')}
+          center={center}
+          zoom={DEFAULT_ZOOM}
+          style={{ height: '100%', width: '100%', minHeight: 280 }}
+          scrollWheelZoom
+        >
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          <MapResizeFix />
+          {allPoints.length > 0 && <FitBounds points={allPoints} zoom={13} />}
+          <MapClickHandler
+            selectingMode={allowPickupSelection ? selectingMode : null}
+            onPickupChange={onPickupChange}
+            onDropoffChange={onDropoffChange}
+          />
+
+          {routeCoordinates.length > 0 && (
+            <Polyline positions={routeCoordinates} color={ROUTE_COLOR} weight={ROUTE_WEIGHT} />
+          )}
+
+          {stops.map((s, index) => (
+            <Marker
+              key={s.id ?? `stop-${s.type}-${index}`}
+              position={[s.latitude, s.longitude]}
+              icon={createStopIcon(s.type)}
+              title={s.name || STOP_TYPE_LABELS[s.type] || s.type}
+            />
+          ))}
+
+          {suggestedPoint && (
+            <Marker
+              position={[suggestedPoint.lat, suggestedPoint.lng]}
+              icon={SUGGESTED_ICON}
+              title="Предложена точка"
+            />
+          )}
+
+          {pickupPoint && (
+            <Marker
+              position={[pickupPoint.lat, pickupPoint.lng]}
+              icon={PICKUP_ICON}
+              draggable={allowPickupSelection && (selectingMode === 'pickup' || selectingMode === null)}
+              eventHandlers={
+                allowPickupSelection ? { dragend: handlePickupDragEnd } : undefined
+              }
+              title="Място за качване – плъзнете за преместване"
+            />
+          )}
+
+          {dropoffPoint && (
+            <Marker
+              position={[dropoffPoint.lat, dropoffPoint.lng]}
+              icon={DROPOFF_ICON}
+              draggable={!!(allowPickupSelection && selectingMode === 'dropoff' && onDropoffChange)}
+              eventHandlers={onDropoffChange ? { dragend: handleDropoffDragEnd } : undefined}
+              title="Място за слизане – плъзнете за преместване"
+            />
+          )}
+        </MapContainer>
+      </div>
+
+      {allowPickupSelection && (
+        <p style={{ margin: '8px 0 0', fontSize: 14, color: '#64748b' }}>
+          {selectingMode === 'dropoff'
+            ? 'Кликнете на картата за място за слизане или плъзнете маркера.'
+            : 'Кликнете на картата за място за качване или плъзнете маркера.'}
         </p>
+      )}
+
+      {suggestedPoint && onUseSuggestedPoint && (
+        <button
+          type="button"
+          onClick={onUseSuggestedPoint}
+          style={{
+            marginTop: 10,
+            padding: '8px 16px',
+            fontSize: 14,
+            background: '#16a34a',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 8,
+            cursor: 'pointer',
+          }}
+        >
+          Използвай предложената точка
+        </button>
       )}
     </div>
   )

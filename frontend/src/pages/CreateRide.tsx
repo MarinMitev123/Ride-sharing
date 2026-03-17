@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { createRide } from '../api/rides'
+import { searchAddress } from '../api/geocoding'
 import { useAuth } from '../contexts/AuthContext'
 import { CITIES } from '../constants/cities'
 import { parseBgDateTime, apiDateToBg } from '../constants/dateLocale'
@@ -42,6 +43,26 @@ export function CreateRide() {
         setSubmitting(false)
         return
       }
+      let fromLat: number | undefined
+      let fromLng: number | undefined
+      let toLat: number | undefined
+      let toLng: number | undefined
+      try {
+        const [fromResults, toResults] = await Promise.all([
+          searchAddress(fromCity.trim() + ', Bulgaria', token),
+          searchAddress(toCity.trim() + ', Bulgaria', token),
+        ])
+        if (fromResults.length > 0) {
+          fromLat = fromResults[0].lat
+          fromLng = fromResults[0].lng
+        }
+        if (toResults.length > 0) {
+          toLat = toResults[0].lat
+          toLng = toResults[0].lng
+        }
+      } catch {
+        // продължаваме без координати – бекендът ще ги попълни при отваряне на картата
+      }
       const body: RideCreateRequest = {
         fromCity: fromCity,
         toCity: toCity,
@@ -49,6 +70,8 @@ export function CreateRide() {
         availableSeats,
         price: priceNum,
         ...(carDetails.trim() && { carDetails: carDetails.trim() }),
+        ...(fromLat != null && fromLng != null && { fromLat, fromLng }),
+        ...(toLat != null && toLng != null && { toLat, toLng }),
       }
       const created = await createRide(body, token!)
       navigate(`/rides/${created.id}`, { replace: true })

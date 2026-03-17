@@ -49,6 +49,9 @@ public class BookingMapper {
                 .pickupAddress(entity.getPickupAddress())
                 .pickupNeighborhood(entity.getPickupNeighborhood())
                 .passengerNote(entity.getPassengerNote())
+                .pickupStopId(entity.getPickupStop() != null ? entity.getPickupStop().getId() : null)
+                .dropoffStopId(entity.getDropoffStop() != null ? entity.getDropoffStop().getId() : null)
+                .seatsReserved(entity.getSeatsReserved())
                 .build();
     }
 }

@@ -60,27 +60,78 @@ VITE_API_URL=http://localhost:8080
 
 ## Функционалности
 
-- **Регистрация и вход** – JWT автентикация
+- **Регистрация и вход** – JWT автентикация, rate limiting за login/register
 - **Промяна на парола** – `POST /api/v1/auth/change-password`
-- **Пътувания** – търсене по град (от/до) и дата, преглед на детайли
-- **Карта** – Leaflet карта с маршрут и точки за качване (областни градове в България)
-- **Резервации** – шофьорът вижда резервациите за свое пътуване: `GET /api/v1/rides/{id}/bookings`
+- **Забравена парола** – forgot-password, reset-password по имейл линк
+- **Пътувания** – търсене по град (от/до), дата, сортиране (дата/час, цена), пагинация
+- **Карта** – Leaflet карта с полилиния маршрут и маркери за качване/слизане
+- **Резервации** – одобрение/отказ от шофьор, отмяна от пътник, място за качване с геокодиране
+- **Чат** – съобщения между шофьор и пътник по пътуване
+- **Оценки** – след приключено пътуване, показване в профил
 - **Админ** – списък потребители, блокиране/отблокиране, статистики (роля `ROLE_ADMIN`)
-- **Глобална обработка на грешки** – единен JSON формат за грешки
+- **Профил** – редакция на име и телефон, смяна на парола, последни оценки
+- **Глобална обработка на грешки** – тостове при API грешки, 401 → изход и пренасочване към вход
 
-## API (кратко)
+## API (пълен преглед)
 
-| Метод | Път | Описание |
-|-------|-----|----------|
-| POST | `/api/v1/auth/register` | Регистрация |
-| POST | `/api/v1/auth/login` | Вход |
-| POST | `/api/v1/auth/change-password` | Промяна на парола (JWT) |
-| GET | `/api/v1/rides?fromCity=&toCity=&date=` | Списък/търсене пътувания |
-| GET | `/api/v1/rides/{id}` | Детайли за пътуване |
-| GET | `/api/v1/rides/{id}/bookings` | Резервации за пътуване (само шофьор) |
-| POST | `/api/v1/rides` | Създаване на пътуване (JWT) |
+- **Swagger UI:** след стартиране на backend отворете **http://localhost:8080/swagger-ui.html**
 
-Всички крайни точки освен `/api/v1/auth/**` изискват заглавка `Authorization: Bearer <token>`.
+| Област | Метод | Път | Описание |
+|--------|-------|-----|----------|
+| Auth | POST | `/api/v1/auth/register` | Регистрация |
+| Auth | POST | `/api/v1/auth/login` | Вход |
+| Auth | POST | `/api/v1/auth/change-password` | Промяна на парола (JWT) |
+| Auth | POST | `/api/v1/auth/forgot-password` | Забравена парола |
+| Auth | POST | `/api/v1/auth/reset-password` | Нулиране на парола по токен |
+| Users | GET | `/api/v1/users/me` | Текущ потребител |
+| Users | PATCH | `/api/v1/users/me` | Редакция на профил (име, телефон) |
+| Rides | GET | `/api/v1/rides?fromCity=&toCity=&date=&page=&size=&sortBy=&sortDir=` | Списък/търсене с пагинация |
+| Rides | GET | `/api/v1/rides/{id}` | Детайли за пътуване |
+| Rides | POST | `/api/v1/rides` | Създаване на пътуване (JWT) |
+| Bookings | POST | `/api/v1/bookings` | Резервация |
+| Bookings | GET | `/api/v1/rides/{rideId}/bookings` | Резервации за пътуване (шофьор) |
+| Bookings | GET | `/api/v1/bookings/my` | Мои резервации |
+| Bookings | PATCH | `/api/v1/bookings/{id}/pickup` | Място за качване |
+| Bookings | PATCH | `/api/v1/bookings/{id}/approve` | Одобрение (шофьор) |
+| Bookings | PATCH | `/api/v1/bookings/{id}/reject` | Отказ (шофьор) |
+| Bookings | DELETE | `/api/v1/bookings/{id}` | Отмяна на резервация |
+| Chat | GET | `/api/v1/chat/ride/{rideId}/with/{otherUserId}` | Разговор по пътуване |
+| Chat | POST | `/api/v1/chat` | Изпращане на съобщение |
+| Ratings | POST | `/api/v1/ratings` | Създаване на оценка |
+| Ratings | GET | `/api/v1/ratings/user/{userId}` | Оценки за потребител |
+| Admin | GET | `/api/v1/admin/users` | Всички потребители (ADMIN) |
+| Admin | POST | `/api/v1/admin/users/{id}/block` | Блокиране (ADMIN) |
+| Admin | POST | `/api/v1/admin/users/{id}/unblock` | Отблокиране (ADMIN) |
+| Admin | GET | `/api/v1/admin/stats` | Статистики (ADMIN) |
+| Health | GET | `/api/v1/health` | Здравен проверка |
+
+Всички крайни точки освен `/api/v1/auth/**`, `/api/v1/geocode`, `/api/v1/health` и Swagger изискват заглавка `Authorization: Bearer <token>`.
+
+## Конфигурация (env)
+
+За production задайте променливи на средата (или `.env`):
+
+- `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD` – MySQL
+- `JWT_SECRET` – base64-кодиран секрет (мин. 256 бита)
+- `JWT_EXPIRY_HOURS` – срок на токена в часове (по подразбиране 24)
+
+Пример: вижте `.env.example`.
+
+## Docker
+
+Стартиране на цялото приложение (MySQL + backend + frontend) с Docker Compose:
+
+```bash
+docker-compose up --build
+```
+
+- **Frontend:** http://localhost (порт 80)
+- **Backend API:** http://localhost:8080 (проксиран през nginx при достъп от браузър към /api)
+- **MySQL:** порт 3306 (вътрешен за контейнерите)
+
+За разработка продължавай да ползваш локално MySQL + `./mvnw spring-boot:run` и `npm run dev`.
+
+**Тестове:** Backend – `mvn test`. Frontend – `npm run test` (изисква Node 18+ за Vitest).
 
 ## Структура на проекта
 
@@ -106,6 +157,12 @@ Diplomna/
 │       └── types/     # TypeScript типове
 └── README.md
 ```
+
+## Достъпност (a11y)
+
+- Формите използват `<label>` свързани с полета; бутоните имат четлив текст или `aria-label` при нужда.
+- Глобалните известия (тостове) имат `role="alert"` и `aria-live="polite"`.
+- За пълна поддръжка препоръчително е да се добави проверка с axe-core или eslint-plugin-jsx-a11y.
 
 ## Лиценз
 

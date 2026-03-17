@@ -14,6 +14,12 @@ export function getApiBaseUrl(): string {
 const getNetworkErrorMessage = (): string =>
   `Не може да се свърже със сървъра (${getApiBaseUrl()}). Уверете се, че бекендът работи.`
 
+let globalErrorHandler: ((message: string, status?: number) => void) | null = null
+
+export function setGlobalErrorHandler(handler: (message: string, status?: number) => void): void {
+  globalErrorHandler = handler
+}
+
 export async function apiRequest<T>(
   path: string,
   options: RequestInit & { token?: string | null } = {}
@@ -32,7 +38,9 @@ export async function apiRequest<T>(
     res = await fetch(url, { ...init, headers })
   } catch (e) {
     if (e instanceof TypeError && (e.message === 'Failed to fetch' || e.message.includes('fetch'))) {
-      throw new Error(getNetworkErrorMessage())
+      const msg = getNetworkErrorMessage()
+      if (globalErrorHandler) globalErrorHandler(msg)
+      throw new Error(msg)
     }
     throw e
   }
@@ -45,7 +53,9 @@ export async function apiRequest<T>(
     } catch {
       // keep body
     }
-    throw new Error(message || `Грешка ${res.status}`)
+    const errMessage = message || `Грешка ${res.status}`
+    if (globalErrorHandler) globalErrorHandler(errMessage, res.status)
+    throw new Error(errMessage)
   }
   const text = await res.text()
   if (!text.trim()) return undefined as T

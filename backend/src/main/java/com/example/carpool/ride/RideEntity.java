@@ -49,5 +49,12 @@ public class RideEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private RideStatus status;
+
+    @Column(columnDefinition = "TEXT")
+    private String routePolyline;
+
+    private Double maxDetourKm;
+
+    private Integer totalSeats;
 }
 

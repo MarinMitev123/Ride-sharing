@@ -1,13 +1,11 @@
 package com.example.carpool.user;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -21,6 +19,12 @@ public class UserController {
     @GetMapping("/me")
     public ResponseEntity<UserDto> getCurrentUser(@AuthenticationPrincipal UserDetails userDetails) {
         return ResponseEntity.ok(userService.getUserByEmail(userDetails.getUsername()));
+    }
+
+    @PatchMapping("/me")
+    public ResponseEntity<UserDto> updateProfile(@AuthenticationPrincipal UserDetails userDetails,
+                                                 @Valid @RequestBody UpdateProfileRequest request) {
+        return ResponseEntity.ok(userService.updateProfile(userDetails.getUsername(), request));
     }
 
     @GetMapping

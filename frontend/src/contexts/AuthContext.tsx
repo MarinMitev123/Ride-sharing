@@ -9,6 +9,7 @@ import {
 } from 'react'
 import type { UserDto } from '../types/api'
 import * as authApi from '../api/auth'
+import { getCurrentUser } from '../api/users'
 
 const TOKEN_KEY = 'carpool_token'
 const USER_KEY = 'carpool_user'
@@ -20,6 +21,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>
   register: (email: string, password: string, name: string, phone?: string) => Promise<void>
   logout: () => void
+  refreshUser: () => Promise<void>
   isAuthenticated: boolean
 }
 
@@ -32,17 +34,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const storedToken = localStorage.getItem(TOKEN_KEY)
-    const storedUser = localStorage.getItem(USER_KEY)
-    if (storedToken && storedUser) {
-      try {
+    if (!storedToken) {
+      setLoading(false)
+      return
+    }
+    getCurrentUser(storedToken)
+      .then((u) => {
+        setUser(u)
         setToken(storedToken)
-        setUser(JSON.parse(storedUser) as UserDto)
-      } catch {
+        localStorage.setItem(USER_KEY, JSON.stringify(u))
+      })
+      .catch(() => {
         localStorage.removeItem(TOKEN_KEY)
         localStorage.removeItem(USER_KEY)
-      }
-    }
-    setLoading(false)
+        setToken(null)
+        setUser(null)
+      })
+      .finally(() => setLoading(false))
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {
@@ -72,6 +80,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }, [])
 
+  const refreshUser = useCallback(async () => {
+    const t = localStorage.getItem(TOKEN_KEY)
+    if (!t) return
+    try {
+      const u = await getCurrentUser(t)
+      localStorage.setItem(USER_KEY, JSON.stringify(u))
+      setUser(u)
+    } catch {
+      logout()
+    }
+  }, [logout])
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -80,9 +100,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       register,
       logout,
+      refreshUser,
       isAuthenticated: !!token && !!user,
     }),
-    [user, token, loading, login, register, logout]
+    [user, token, loading, login, register, logout, refreshUser]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

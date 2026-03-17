@@ -1,6 +1,7 @@
 package com.example.carpool.booking;
 
 import com.example.carpool.ride.RideEntity;
+import com.example.carpool.ride.RideStopEntity;
 import com.example.carpool.user.UserEntity;
 import jakarta.persistence.*;
 import lombok.*;
@@ -29,6 +30,17 @@ public class BookingEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private BookingStatus status;
+
+    @ManyToOne
+    @JoinColumn(name = "pickup_stop_id")
+    private RideStopEntity pickupStop;
+
+    @ManyToOne
+    @JoinColumn(name = "dropoff_stop_id")
+    private RideStopEntity dropoffStop;
+
+    @Column(name = "seats_reserved", nullable = false)
+    private Integer seatsReserved = 1;
 
     private Double pickupLat;
     private Double pickupLng;

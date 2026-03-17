@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
-import { getPendingBookingsForDriver } from './api/bookings'
+import { ToastProvider, useToast } from './contexts/ToastContext'
+import { setGlobalErrorHandler } from './api/client'
+import { getPendingBookingsForDriver, getActiveBookingsForDriver } from './api/bookings'
 import { Login } from './pages/Login'
 import { Register } from './pages/Register'
 import { RidesList } from './pages/RidesList'
@@ -12,7 +14,26 @@ import { PendingDriverBookings } from './pages/PendingDriverBookings'
 import { ForgotPassword } from './pages/ForgotPassword'
 import { ResetPassword } from './pages/ResetPassword'
 import { Profile } from './pages/Profile'
+import { Admin } from './pages/Admin'
 import './index.css'
+
+function ToastList() {
+  const { toasts, removeToast } = useToast()
+  if (toasts.length === 0) return null
+  return (
+    <div className="toast-list" role="alert" aria-live="polite">
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          className={`toast toast-${t.type}`}
+          onClick={() => removeToast(t.id)}
+        >
+          {t.message}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth()
@@ -26,16 +47,51 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function Layout({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated, logout, token } = useAuth()
+  const { addToast } = useToast()
+  const navigate = useNavigate()
   const [pendingCount, setPendingCount] = useState(0)
+  const [hasDriverRides, setHasDriverRides] = useState(false)
+  const [driverRidesChecked, setDriverRidesChecked] = useState(false)
+  const logoutRef = useRef(logout)
+  const addToastRef = useRef(addToast)
+  const navigateRef = useRef(navigate)
+  logoutRef.current = logout
+  addToastRef.current = addToast
+  navigateRef.current = navigate
+
+  useEffect(() => {
+    setGlobalErrorHandler((message, status) => {
+      if (status === 401) {
+        logoutRef.current()
+        navigateRef.current('/login', { replace: true })
+        addToastRef.current('Сесията изтече. Влезте отново.', 'info')
+      } else if (status === 403) {
+        addToastRef.current(message || 'Нямате права за това действие. Влезте с друг акаунт или не отваряйте Админ.', 'error')
+      } else {
+        addToastRef.current(message, 'error')
+      }
+    })
+  }, [])
 
   useEffect(() => {
     if (!isAuthenticated || !token) {
       setPendingCount(0)
+      setHasDriverRides(false)
+      setDriverRidesChecked(false)
       return
     }
     getPendingBookingsForDriver(token)
       .then((list) => setPendingCount(list.length))
       .catch(() => setPendingCount(0))
+    getActiveBookingsForDriver(token)
+      .then((bookings) => {
+        setHasDriverRides(Array.isArray(bookings) && bookings.length > 0)
+        setDriverRidesChecked(true)
+      })
+      .catch(() => {
+        setHasDriverRides(false)
+        setDriverRidesChecked(true)
+      })
   }, [isAuthenticated, token])
 
   return (
@@ -58,10 +114,18 @@ function Layout({ children }: { children: React.ReactNode }) {
               <Link to="/rides">Пътувания</Link>
               <Link to="/rides/new">Създай пътуване</Link>
               <Link to="/my-bookings">Мои резервации</Link>
-              <Link to="/pending-bookings">
-                Чакащи резервации{pendingCount > 0 ? ` (${pendingCount})` : ''}
-              </Link>
+              {driverRidesChecked && hasDriverRides && (
+                <>
+                  <Link to="/pending-bookings">Маршрут при тръгване</Link>
+                  <Link to="/pending-bookings">
+                    Чакащи резервации{pendingCount > 0 ? ` (${pendingCount})` : ''}
+                  </Link>
+                </>
+              )}
               <Link to="/profile">Профил</Link>
+              {user?.role === 'ROLE_ADMIN' && (
+                <Link to="/admin">Админ</Link>
+              )}
             </>
           )}
           {isAuthenticated ? (
@@ -78,6 +142,7 @@ function Layout({ children }: { children: React.ReactNode }) {
         </nav>
       </header>
       <main className="app-main">{children}</main>
+      <ToastList />
     </div>
   )
 }
@@ -94,6 +159,7 @@ function AppRoutes() {
       <Route path="/my-bookings" element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />
       <Route path="/pending-bookings" element={<ProtectedRoute><PendingDriverBookings /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+      <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="*" element={<Navigate to="/rides" replace />} />
@@ -105,9 +171,11 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Layout>
-          <AppRoutes />
-        </Layout>
+        <ToastProvider>
+          <Layout>
+            <AppRoutes />
+          </Layout>
+        </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
   )

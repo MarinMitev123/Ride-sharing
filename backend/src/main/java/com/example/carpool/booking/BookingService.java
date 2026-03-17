@@ -3,12 +3,15 @@ package com.example.carpool.booking;
 import com.example.carpool.ride.RideEntity;
 import com.example.carpool.ride.RideRepository;
 import com.example.carpool.ride.RideStatus;
+import com.example.carpool.ride.RideStopEntity;
+import com.example.carpool.ride.RideStopRepository;
 import com.example.carpool.user.UserEntity;
 import com.example.carpool.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -18,6 +21,7 @@ public class BookingService {
 
     private final BookingRepository bookingRepository;
     private final RideRepository rideRepository;
+    private final RideStopRepository rideStopRepository;
     private final UserRepository userRepository;
 
     @Transactional
@@ -45,6 +49,45 @@ public class BookingService {
         return BookingMapper.toDto(entity);
     }
 
+    @Transactional
+    public BookingDto createWithStops(Long rideId, Long passengerId, Long pickupStopId, Long dropoffStopId, int seatsReserved) {
+        RideEntity ride = rideRepository.findById(rideId)
+                .orElseThrow(() -> new IllegalArgumentException("Ride not found"));
+        UserEntity passenger = userRepository.findById(passengerId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        if (ride.getDriver() != null && ride.getDriver().getId().equals(passengerId)) {
+            throw new IllegalArgumentException("Driver cannot book own ride");
+        }
+        if (bookingRepository.existsByRide_IdAndPassenger_IdAndStatusIn(
+                rideId, passengerId, List.of(BookingStatus.PENDING, BookingStatus.APPROVED))) {
+            throw new IllegalArgumentException("Already booked");
+        }
+        int available = ride.getAvailableSeats() != null ? ride.getAvailableSeats() : 0;
+        if (available < seatsReserved) {
+            throw new IllegalArgumentException("Not enough available seats");
+        }
+        RideStopEntity pickupStop = rideStopRepository.findById(pickupStopId)
+                .orElseThrow(() -> new IllegalArgumentException("Pickup stop not found"));
+        RideStopEntity dropoffStop = rideStopRepository.findById(dropoffStopId)
+                .orElseThrow(() -> new IllegalArgumentException("Dropoff stop not found"));
+        if (!pickupStop.getRide().getId().equals(rideId) || !dropoffStop.getRide().getId().equals(rideId)) {
+            throw new IllegalArgumentException("Stops do not belong to this ride");
+        }
+        BookingEntity entity = BookingEntity.builder()
+                .ride(ride)
+                .passenger(passenger)
+                .status(BookingStatus.PENDING)
+                .pickupStop(pickupStop)
+                .dropoffStop(dropoffStop)
+                .seatsReserved(seatsReserved)
+                .pickupLat(pickupStop.getLatitude())
+                .pickupLng(pickupStop.getLongitude())
+                .pickupAddress(pickupStop.getName())
+                .build();
+        entity = bookingRepository.save(entity);
+        return BookingMapper.toDto(entity);
+    }
+
     @Transactional(readOnly = true)
     public List<BookingDto> getBookingsForRide(Long rideId) {
         return bookingRepository.findByRide_IdOrderByIdAsc(rideId).stream()
@@ -59,16 +102,21 @@ public class BookingService {
                 .collect(Collectors.toList());
     }
 
+    /** Пътуванията се показват само до 2 часа след зададения час на тръгване; след това не влизат в списъка. */
+    private static final int HOURS_AFTER_DEPARTURE_VISIBLE = 2;
+
     @Transactional(readOnly = true)
     public List<BookingDto> getPendingBookingsForDriver(Long driverId) {
-        return bookingRepository.findPendingByDriverId(driverId, BookingStatus.PENDING).stream()
+        LocalDateTime cutoff = LocalDateTime.now().minusHours(HOURS_AFTER_DEPARTURE_VISIBLE);
+        return bookingRepository.findPendingByDriverId(driverId, BookingStatus.PENDING, cutoff).stream()
                 .map(BookingMapper::toDto)
                 .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
     public List<BookingDto> getActiveBookingsForDriver(Long driverId) {
-        return bookingRepository.findActiveByDriverId(driverId, BookingStatus.PENDING, BookingStatus.APPROVED).stream()
+        LocalDateTime cutoff = LocalDateTime.now().minusHours(HOURS_AFTER_DEPARTURE_VISIBLE);
+        return bookingRepository.findActiveByDriverId(driverId, BookingStatus.PENDING, BookingStatus.APPROVED, cutoff).stream()
                 .map(BookingMapper::toDto)
                 .collect(Collectors.toList());
     }
@@ -103,7 +151,8 @@ public class BookingService {
         }
         entity.setStatus(BookingStatus.APPROVED);
         entity = bookingRepository.save(entity);
-        ride.setAvailableSeats(ride.getAvailableSeats() - 1);
+        int seats = entity.getSeatsReserved() != null ? entity.getSeatsReserved() : 1;
+        ride.setAvailableSeats(ride.getAvailableSeats() - seats);
         if (ride.getAvailableSeats() <= 0) {
             ride.setStatus(RideStatus.FULL);
         }
@@ -139,7 +188,8 @@ public class BookingService {
         bookingRepository.save(entity);
         if (wasApproved) {
             RideEntity ride = entity.getRide();
-            ride.setAvailableSeats(ride.getAvailableSeats() + 1);
+            int seats = entity.getSeatsReserved() != null ? entity.getSeatsReserved() : 1;
+            ride.setAvailableSeats(ride.getAvailableSeats() + seats);
             if (ride.getStatus() == RideStatus.FULL) {
                 ride.setStatus(RideStatus.OPEN);
             }
@@ -160,7 +210,8 @@ public class BookingService {
         }
         entity.setStatus(BookingStatus.CANCELED);
         bookingRepository.save(entity);
-        ride.setAvailableSeats(ride.getAvailableSeats() + 1);
+        int seats = entity.getSeatsReserved() != null ? entity.getSeatsReserved() : 1;
+        ride.setAvailableSeats(ride.getAvailableSeats() + seats);
         if (ride.getStatus() == RideStatus.FULL) {
             ride.setStatus(RideStatus.OPEN);
         }

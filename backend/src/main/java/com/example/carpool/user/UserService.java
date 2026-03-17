@@ -34,5 +34,18 @@ public class UserService {
                 .map(UserMapper::toDto)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
     }
+
+    @Transactional
+    public UserDto updateProfile(String email, UpdateProfileRequest request) {
+        UserEntity user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        if (request.name() != null && !request.name().isBlank()) {
+            user.setName(request.name().trim());
+        }
+        if (request.phone() != null) {
+            user.setPhone(request.phone().trim().isEmpty() ? null : request.phone().trim());
+        }
+        return UserMapper.toDto(userRepository.save(user));
+    }
 }
 

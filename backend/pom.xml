@@ -111,6 +111,18 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
+            <plugin>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-maven-plugin</artifactId>
+                <version>${flyway.version}</version>
+                <configuration>
+                    <!-- Same as application.yml defaults; override with -Dflyway.url=... -Dflyway.user=... -Dflyway.password=... -->
+                    <url>jdbc:mysql://localhost:3306/carpool_db?useSSL=false&amp;allowPublicKeyRetrieval=true&amp;serverTimezone=UTC</url>
+                    <user>root</user>
+                    <password>root</password>
+                    <locations>classpath:db/migration</locations>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 

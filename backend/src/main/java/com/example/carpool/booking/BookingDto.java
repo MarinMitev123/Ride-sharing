@@ -21,4 +21,7 @@ public class BookingDto {
     String pickupAddress;
     String pickupNeighborhood;
     String passengerNote;
+    Long pickupStopId;
+    Long dropoffStopId;
+    Integer seatsReserved;
 }
