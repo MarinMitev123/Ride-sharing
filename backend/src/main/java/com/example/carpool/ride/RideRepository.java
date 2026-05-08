@@ -11,10 +11,13 @@ import java.util.List;
 
 public interface RideRepository extends JpaRepository<RideEntity, Long> {
 
-    @Query("SELECT r FROM RideEntity r WHERE (:fromCity IS NULL OR :fromCity = '' OR r.fromCity = :fromCity) " +
-            "AND (:toCity IS NULL OR :toCity = '' OR r.toCity = :toCity) " +
+    /** OPEN и FULL – пътуването е видимо при търсене; CANCELED/FINISHED не се показват.
+     *  Сравнението на градовете е case-insensitive и trim-нато, за да не пропуска обяви при разлики в интервали/регистър.
+     */
+    @Query("SELECT r FROM RideEntity r WHERE (:fromCity IS NULL OR :fromCity = '' OR LOWER(TRIM(r.fromCity)) = LOWER(TRIM(:fromCity))) " +
+            "AND (:toCity IS NULL OR :toCity = '' OR LOWER(TRIM(r.toCity)) = LOWER(TRIM(:toCity))) " +
             "AND (:dateStart IS NULL OR (r.departureTime >= :dateStart AND r.departureTime < :dateEnd)) " +
-            "AND r.status = 'OPEN'")
+            "AND (r.status = 'OPEN' OR r.status = 'FULL')")
     Page<RideEntity> findFiltered(
             @Param("fromCity") String fromCity,
             @Param("toCity") String toCity,

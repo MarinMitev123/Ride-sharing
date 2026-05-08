@@ -10,6 +10,13 @@ export function ResetPassword() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [successMessage, setSuccessMessage] = useState('')
+
+  const isPasswordStrong = (value: string) =>
+    value.length >= 8
+    && /[A-Z]/.test(value)
+    && /[a-z]/.test(value)
+    && /[0-9]/.test(value)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -18,8 +25,8 @@ export function ResetPassword() {
       setError('Паролите не съвпадат')
       return
     }
-    if (newPassword.length < 6) {
-      setError('Паролата трябва да е поне 6 символа')
+    if (!isPasswordStrong(newPassword)) {
+      setError('Паролата трябва да е поне 8 символа и да съдържа главна, малка буква и цифра')
       return
     }
     if (!tokenFromUrl.trim()) {
@@ -28,7 +35,8 @@ export function ResetPassword() {
     }
     setSubmitting(true)
     try {
-      await resetPassword({ token: tokenFromUrl, newPassword })
+      const res = await resetPassword(tokenFromUrl, newPassword, confirmPassword)
+      setSuccessMessage(res.message)
       setSuccess(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Грешка при смяна на паролата')
@@ -41,9 +49,9 @@ export function ResetPassword() {
     return (
       <div className="auth-page">
         <div className="auth-page__card">
-          <h1 className="auth-page__title">Паролата е сменена</h1>
+          <h1 className="auth-page__title">Успешна смяна на паролата</h1>
           <p style={{ marginBottom: 20 }}>
-            Можете да влезете с новата си парола.
+            {successMessage || 'Паролата беше променена успешно.'}
           </p>
           <Link to="/login">Към вход</Link>
         </div>
@@ -56,7 +64,7 @@ export function ResetPassword() {
       <div className="auth-page__card">
         <h1 className="auth-page__title">Нова парола</h1>
         <p className="auth-page__tagline" style={{ marginBottom: 20 }}>
-          Въведете нова парола за акаунта си.
+          Въведете нова парола за акаунта си. Минимум 8 символа, главна, малка буква и цифра.
         </p>
         <form onSubmit={handleSubmit} className="auth-page__form">
           {error && <div className="form-error">{error}</div>}
@@ -67,7 +75,7 @@ export function ResetPassword() {
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={8}
               placeholder="••••••••"
               style={{ width: '100%', padding: '10px 12px', marginTop: 4, border: '1px solid #d1d5db', borderRadius: 8 }}
             />
@@ -79,13 +87,13 @@ export function ResetPassword() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={8}
               placeholder="••••••••"
               style={{ width: '100%', padding: '10px 12px', marginTop: 4, border: '1px solid #d1d5db', borderRadius: 8 }}
             />
           </label>
           <button type="submit" disabled={submitting} className="auth-page__btn" style={{ marginTop: 16 }}>
-            {submitting ? 'Запазване...' : 'Запази новата парола'}
+            {submitting ? 'Запазване...' : 'Смени парола'}
           </button>
         </form>
         <p className="form-footer" style={{ marginTop: 20 }}>

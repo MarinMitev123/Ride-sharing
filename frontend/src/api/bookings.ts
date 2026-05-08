@@ -1,5 +1,5 @@
 import { apiRequest } from './client'
-import type { BookingDto } from '../types/api'
+import type { BookingDto, CreateCheckoutSessionResponse } from '../types/api'
 
 export async function getBookingsForRide(rideId: number, token: string): Promise<BookingDto[]> {
   const data = await apiRequest<BookingDto[]>(`/rides/${rideId}/bookings`, { token })
@@ -73,6 +73,21 @@ export async function cancelBooking(bookingId: number, token: string): Promise<v
 
 export async function removePassengerByDriver(bookingId: number, token: string): Promise<void> {
   await apiRequest<void>(`/bookings/${bookingId}/remove`, {
+    method: 'PATCH',
+    token,
+  })
+}
+
+export async function createCheckoutSession(bookingId: number, token: string): Promise<CreateCheckoutSessionResponse> {
+  return apiRequest<CreateCheckoutSessionResponse>('/payments/create-checkout-session', {
+    method: 'POST',
+    body: JSON.stringify({ bookingId }),
+    token,
+  })
+}
+
+export async function markBookingCashPaid(bookingId: number, token: string): Promise<BookingDto> {
+  return apiRequest<BookingDto>(`/bookings/${bookingId}/mark-cash-paid`, {
     method: 'PATCH',
     token,
   })

@@ -53,6 +53,7 @@ public class SecurityConfig {
                                 "/api/v1/auth/**",
                                 "/api/v1/geocode",
                                 "/api/v1/health",
+                                "/api/v1/payments/webhook",
                                 "/v3/api-docs/**",
                                 "/swagger-ui.html",
                                 "/swagger-ui/**"

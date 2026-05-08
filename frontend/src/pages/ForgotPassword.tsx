@@ -7,13 +7,15 @@ export function ForgotPassword() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [sent, setSent] = useState(false)
+  const [message, setMessage] = useState('')
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
     setSubmitting(true)
     try {
-      await forgotPassword({ email })
+      const res = await forgotPassword(email)
+      setMessage(res.message)
       setSent(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Грешка при изпращане')
@@ -28,7 +30,7 @@ export function ForgotPassword() {
         <div className="auth-page__card">
           <h1 className="auth-page__title">Проверете имейла си</h1>
           <p style={{ marginBottom: 20 }}>
-            Ако има регистрация с този имейл, ще получите връзка за възстановяване на паролата.
+            {message || 'Ако съществува акаунт с този имейл, ще получите инструкции за възстановяване.'}
           </p>
           <Link to="/login">Обратно към входа</Link>
         </div>
@@ -41,7 +43,7 @@ export function ForgotPassword() {
       <div className="auth-page__card">
         <h1 className="auth-page__title">Забравена парола</h1>
         <p className="auth-page__tagline" style={{ marginBottom: 20 }}>
-          Въведете имейла си и ще ви изпратим връзка за нова парола.
+          Въведете имейла си и натиснете „Изпрати инструкции“.
         </p>
         <form onSubmit={handleSubmit} className="auth-page__form">
           {error && <div className="form-error">{error}</div>}
@@ -57,7 +59,7 @@ export function ForgotPassword() {
             />
           </label>
           <button type="submit" disabled={submitting} className="auth-page__btn" style={{ marginTop: 16 }}>
-            {submitting ? 'Изпращане...' : 'Изпрати връзка'}
+            {submitting ? 'Изпращане...' : 'Изпрати инструкции'}
           </button>
         </form>
         <p className="form-footer" style={{ marginTop: 20 }}>

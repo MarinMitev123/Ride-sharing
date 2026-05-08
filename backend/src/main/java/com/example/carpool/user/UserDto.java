@@ -12,6 +12,7 @@ public class UserDto {
     String email;
     String name;
     String phone;
+    String iban;
     UserRole role;
     UserStatus status;
     BigDecimal ratingAverage;

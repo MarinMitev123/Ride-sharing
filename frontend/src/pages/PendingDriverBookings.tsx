@@ -5,8 +5,10 @@ import {
   approveBooking,
   rejectBooking,
   removePassengerByDriver,
+  markBookingCashPaid,
 } from '../api/bookings'
 import { useAuth } from '../contexts/AuthContext'
+import { useToast } from '../contexts/ToastContext'
 import type { BookingDto } from '../types/api'
 
 function formatDateTime(iso: string | undefined) {
@@ -41,6 +43,7 @@ function pickupText(b: BookingDto): string {
 
 export function PendingDriverBookings() {
   const { token } = useAuth()
+  const { addToast } = useToast()
   const [list, setList] = useState<BookingDto[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -69,7 +72,7 @@ export function PendingDriverBookings() {
   }, [token])
 
   const pendingList = list.filter((b) => b.status === 'PENDING' && isRideStillVisible(b.departureTime))
-  const approvedList = list.filter((b) => b.status === 'APPROVED' && isRideStillVisible(b.departureTime))
+  const approvedList = list.filter((b) => (b.status === 'APPROVED' || b.status === 'PENDING_PAYMENT') && isRideStillVisible(b.departureTime))
 
   const handleApprove = async (bookingId: number) => {
     if (!token) return
@@ -102,6 +105,30 @@ export function PendingDriverBookings() {
     } finally {
       setActionId(null)
     }
+  }
+
+  const handleMarkCashPaid = async (bookingId: number) => {
+    if (!token) return
+    setActionId(bookingId)
+    try {
+      await markBookingCashPaid(bookingId, token)
+      load()
+      addToast('Плащането в кеш е маркирано като получено.', 'success')
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Грешка при маркиране на плащане', 'error')
+    } finally {
+      setActionId(null)
+    }
+  }
+
+  const paymentText = (b: BookingDto) => {
+    if (b.paymentMethod === 'CARD') {
+      if (b.paymentStatus === 'PAID') return 'Платено с карта'
+      if (b.paymentStatus === 'REFUNDED') return 'Възстановено'
+      return 'Карта (чака плащане)'
+    }
+    if (b.paymentStatus === 'PAID') return 'Кеш (получено)'
+    return 'Кеш при качване'
   }
 
   if (loading) {
@@ -147,6 +174,9 @@ export function PendingDriverBookings() {
                 <div style={{ fontSize: 14, color: '#475569', marginBottom: 6 }}>
                   {b.fromCity && b.toCity ? `${b.fromCity} → ${b.toCity}` : `Пътуване #${b.rideId}`}
                   {b.departureTime && ` · ${formatDateTime(b.departureTime)}`}
+                </div>
+                <div style={{ fontSize: 14, color: '#334155', marginBottom: 6 }}>
+                  <strong>Плащане:</strong> {paymentText(b)}
                 </div>
                 <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
                   <button
@@ -197,6 +227,9 @@ export function PendingDriverBookings() {
                   {b.departureTime && ` · ${formatDateTime(b.departureTime)}`}
                 </div>
                 <div style={{ fontSize: 14, marginBottom: 4 }}>
+                  <strong>Плащане:</strong> {paymentText(b)}
+                </div>
+                <div style={{ fontSize: 14, marginBottom: 4 }}>
                   <strong>Място за качване:</strong> {pickupText(b)}
                 </div>
                 {b.pickupNeighborhood && (
@@ -211,6 +244,16 @@ export function PendingDriverBookings() {
                 )}
                 {!b.pickupNeighborhood && !b.passengerNote && <div style={{ marginBottom: 8 }} />}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                  {b.paymentMethod === 'CASH' && b.paymentStatus !== 'PAID' && (
+                    <button
+                      type="button"
+                      onClick={() => handleMarkCashPaid(b.id)}
+                      disabled={actionId !== null}
+                      style={{ padding: '6px 14px', border: '1px solid #16a34a', color: '#166534', background: '#f0fdf4', borderRadius: 8, cursor: 'pointer' }}
+                    >
+                      Маркирай кеш платено
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleRemove(b.id)}

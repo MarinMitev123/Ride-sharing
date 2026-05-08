@@ -12,7 +12,10 @@ public class RideDto {
     Long id;
     Long driverId;
     String fromCity;
+    String fromDistrict;
     String toCity;
+    String toDistrict;
+    Boolean cardPaymentAvailable;
     Double fromLat;
     Double fromLng;
     Double toLat;

@@ -41,16 +41,17 @@ public class AuthController {
 
     @PostMapping("/forgot-password")
     public ResponseEntity<ForgotPasswordResponse> forgotPassword(
-            @Valid @RequestBody ForgotPasswordRequest request,
-            @org.springframework.web.bind.annotation.RequestHeader(value = "Origin", required = false) String origin) {
-        String baseUrl = origin != null ? origin : "http://localhost:5173";
-        return ResponseEntity.ok(authService.forgotPassword(request.email(), baseUrl));
+            @Valid @RequestBody ForgotPasswordRequest request) {
+        return ResponseEntity.ok(authService.forgotPassword(request.email()));
     }
 
     @PostMapping("/reset-password")
-    public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
-        authService.resetPassword(request.token(), request.newPassword());
-        return ResponseEntity.ok().build();
+    public ResponseEntity<AuthMessageResponse> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        return ResponseEntity.ok(authService.resetPassword(
+                request.token(),
+                request.newPassword(),
+                request.confirmPassword()
+        ));
     }
 }
 

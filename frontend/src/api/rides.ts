@@ -1,4 +1,4 @@
-import { apiRequest } from './client'
+import { apiRequest, getApiUrl } from './client'
 import type {
   RideDto,
   RideCreateRequest,
@@ -10,6 +10,7 @@ import type {
   ValidatePointsResponse,
   BookRideRequest,
   BookingDto,
+  DriverLocationDto,
 } from '../types/api'
 
 export interface RideRouteDto {
@@ -113,4 +114,50 @@ export async function bookRide(
     body: JSON.stringify(body),
     token,
   })
+}
+
+export async function finishRide(rideId: number, token: string): Promise<RideDto> {
+  return apiRequest<RideDto>(`/rides/${rideId}/finish`, {
+    method: 'POST',
+    token,
+  })
+}
+
+export async function upsertDriverLocation(
+  rideId: number,
+  body: { latitude?: number; longitude?: number; targetPassengerId: number; isActive: boolean },
+  token: string
+): Promise<DriverLocationDto> {
+  return apiRequest<DriverLocationDto>(`/rides/${rideId}/driver-location`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    token,
+  })
+}
+
+export async function getDriverLocation(
+  rideId: number,
+  token: string
+): Promise<DriverLocationDto | null> {
+  const res = await fetch(getApiUrl(`/rides/${rideId}/driver-location`), {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  })
+  if (res.status === 404 || res.status === 403) return null
+  if (!res.ok) {
+    const body = await res.text()
+    let message = body
+    try {
+      const parsed = JSON.parse(body)
+      message = parsed.message ?? body
+    } catch {
+      // keep raw text
+    }
+    throw new Error(message || `Грешка ${res.status}`)
+  }
+  const text = await res.text()
+  if (!text.trim()) return null
+  return JSON.parse(text) as DriverLocationDto
 }

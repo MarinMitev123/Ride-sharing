@@ -1,7 +1,10 @@
 package com.example.carpool.ride;
 
 import com.example.carpool.booking.BookingDto;
+import com.example.carpool.booking.BookingRepository;
+import com.example.carpool.booking.BookingStatus;
 import com.example.carpool.booking.BookingService;
+import com.example.carpool.booking.PaymentMethod;
 import com.example.carpool.geocode.CityCenterCoordinates;
 import com.example.carpool.geocode.GeocodeService;
 import com.example.carpool.geocode.GeocodingResultDto;
@@ -19,14 +22,18 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+
+import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 @Service
 @RequiredArgsConstructor
@@ -35,7 +42,9 @@ public class RideService {
     private final RideRepository rideRepository;
     private final RideStopRepository rideStopRepository;
     private final UserRepository userRepository;
+    private final BookingRepository bookingRepository;
     private final BookingService bookingService;
+    private final DriverLocationRepository driverLocationRepository;
     private final RouteService routeService;
     private final RouteGeometryService routeGeometryService;
     private final GeocodeService geocodeService;
@@ -44,12 +53,27 @@ public class RideService {
     private static final int MAX_PAGE_SIZE = 100;
     private static final double DEFAULT_MAX_DETOUR_KM = 5.0;
     private static final double KM_PER_DEGREE_APPROX = 111.0;
+    /** Границите на календарния ден за филтър да съвпадат с датата от браузъра (България), не с UTC на сървъра */
+    private static final ZoneId FILTER_DAY_ZONE = ZoneId.of("Europe/Sofia");
 
     @Transactional(readOnly = false)
     public RideDto createRide(Long driverId, RideCreateRequest request) {
         UserEntity driver = userRepository.findById(driverId)
                 .orElseThrow(() -> new IllegalArgumentException("Driver not found"));
         RideEntity ride = RideMapper.fromCreateRequest(request, driver);
+        // Попълваме центъра на града само ако клиентът не е подал координати (напр. за квартал).
+        if (ride.getFromLat() == null || ride.getFromLng() == null) {
+            CityCenterCoordinates.getLatLng(ride.getFromCity()).ifPresent(c -> {
+                ride.setFromLat(c[0]);
+                ride.setFromLng(c[1]);
+            });
+        }
+        if (ride.getToLat() == null || ride.getToLng() == null) {
+            CityCenterCoordinates.getLatLng(ride.getToCity()).ifPresent(c -> {
+                ride.setToLat(c[0]);
+                ride.setToLng(c[1]);
+            });
+        }
         RideEntity saved = rideRepository.save(ride);
         ensureRouteAndStops(saved);
         return RideMapper.toDto(rideRepository.findById(saved.getId()).orElse(saved));
@@ -103,8 +127,8 @@ public class RideService {
 
         String from = (fromCity != null && !fromCity.isBlank()) ? fromCity.trim() : null;
         String to = (toCity != null && !toCity.isBlank()) ? toCity.trim() : null;
-        LocalDateTime dateStart = date != null ? date.atStartOfDay() : null;
-        LocalDateTime dateEnd = date != null ? date.plusDays(1).atStartOfDay() : null;
+        LocalDateTime dateStart = date != null ? date.atStartOfDay(FILTER_DAY_ZONE).toLocalDateTime() : null;
+        LocalDateTime dateEnd = date != null ? date.plusDays(1).atStartOfDay(FILTER_DAY_ZONE).toLocalDateTime() : null;
 
         return rideRepository.findFiltered(from, to, dateStart, dateEnd, pageable)
                 .map(RideMapper::toDto);
@@ -121,9 +145,147 @@ public class RideService {
 
     @Transactional(readOnly = true)
     public RideDto getRideById(Long id) {
-        return rideRepository.findById(id)
-                .map(RideMapper::toDto)
+        RideEntity entity = rideRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Ride not found"));
+        RideDto dto = RideMapper.toDto(entity);
+        return withResolvedCoordinates(entity, dto);
+    }
+
+    @Transactional(readOnly = false)
+    public RideDto finishRide(Long rideId, Long driverId) {
+        RideEntity ride = rideRepository.findById(rideId)
+                .orElseThrow(() -> new IllegalArgumentException("Ride not found"));
+        if (ride.getDriver() == null || !ride.getDriver().getId().equals(driverId)) {
+            throw new AccessDeniedException("Only the driver can finish this ride");
+        }
+        if (ride.getStatus() == RideStatus.CANCELED) {
+            throw new IllegalArgumentException("Canceled ride cannot be finished");
+        }
+        ride.setStatus(RideStatus.FINISHED);
+        RideEntity saved = rideRepository.save(ride);
+        return RideMapper.toDto(saved);
+    }
+
+    @Transactional
+    public DriverLocationDto upsertDriverLocation(Long rideId, Long driverId, DriverLocationUpdateRequest request) {
+        RideEntity ride = rideRepository.findById(rideId)
+                .orElseThrow(() -> new IllegalArgumentException("Ride not found"));
+        if (ride.getDriver() == null || !ride.getDriver().getId().equals(driverId)) {
+            throw new AccessDeniedException("Only ride driver can update location");
+        }
+        UserEntity targetPassenger = userRepository.findById(request.targetPassengerId())
+                .orElseThrow(() -> new IllegalArgumentException("Target passenger not found"));
+        boolean passengerInRide = bookingRepository.existsByRide_IdAndPassenger_IdAndStatusIn(
+                rideId,
+                request.targetPassengerId(),
+                List.of(BookingStatus.APPROVED, BookingStatus.PENDING_PAYMENT)
+        );
+        if (!passengerInRide) {
+            throw new AccessDeniedException("Target passenger is not an active passenger for this ride");
+        }
+        if (Boolean.TRUE.equals(request.isActive()) && (request.latitude() == null || request.longitude() == null)) {
+            throw new IllegalArgumentException("Latitude and longitude are required when sharing is active");
+        }
+
+        DriverLocationEntity entity = driverLocationRepository
+                .findByRide_IdAndDriver_IdAndTargetPassenger_Id(rideId, driverId, request.targetPassengerId())
+                .orElseGet(() -> DriverLocationEntity.builder()
+                        .ride(ride)
+                        .driver(ride.getDriver())
+                        .targetPassenger(targetPassenger)
+                        .latitude(request.latitude() != null ? request.latitude() : 0.0d)
+                        .longitude(request.longitude() != null ? request.longitude() : 0.0d)
+                        .active(false)
+                        .updatedAt(LocalDateTime.now())
+                        .build());
+
+        if (Boolean.TRUE.equals(request.isActive())) {
+            driverLocationRepository.findByRide_IdAndDriver_IdAndActiveTrue(rideId, driverId).stream()
+                    .filter(active -> !active.getTargetPassenger().getId().equals(request.targetPassengerId()))
+                    .forEach(active -> {
+                        active.setActive(false);
+                        active.setUpdatedAt(LocalDateTime.now());
+                        driverLocationRepository.save(active);
+                    });
+            entity.setLatitude(request.latitude());
+            entity.setLongitude(request.longitude());
+        }
+
+        entity.setActive(Boolean.TRUE.equals(request.isActive()));
+        entity.setUpdatedAt(LocalDateTime.now());
+        DriverLocationEntity saved = driverLocationRepository.save(entity);
+        return toDriverLocationDto(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public DriverLocationDto getDriverLocation(Long rideId, Long userId) {
+        RideEntity ride = rideRepository.findById(rideId)
+                .orElseThrow(() -> new IllegalArgumentException("Ride not found"));
+        DriverLocationEntity active = driverLocationRepository
+                .findFirstByRide_IdAndActiveTrueOrderByUpdatedAtDesc(rideId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "No active driver location"));
+        boolean isDriver = ride.getDriver() != null && ride.getDriver().getId().equals(userId);
+        boolean isTargetPassenger = active.getTargetPassenger() != null && active.getTargetPassenger().getId().equals(userId);
+        if (!isDriver && !isTargetPassenger) {
+            throw new AccessDeniedException("You do not have access to this driver location");
+        }
+        return toDriverLocationDto(active);
+    }
+
+    private DriverLocationDto toDriverLocationDto(DriverLocationEntity entity) {
+        return DriverLocationDto.builder()
+                .rideId(entity.getRide() != null ? entity.getRide().getId() : null)
+                .driverId(entity.getDriver() != null ? entity.getDriver().getId() : null)
+                .targetPassengerId(entity.getTargetPassenger() != null ? entity.getTargetPassenger().getId() : null)
+                .latitude(entity.getLatitude())
+                .longitude(entity.getLongitude())
+                .isActive(entity.isActive())
+                .updatedAt(entity.getUpdatedAt())
+                .build();
+    }
+
+    /** Ако липсват координати, попълва с центъра на града за известни градове. */
+    private RideDto withResolvedCoordinates(RideEntity entity, RideDto dto) {
+        Double fromLat = dto.getFromLat();
+        Double fromLng = dto.getFromLng();
+        Double toLat = dto.getToLat();
+        Double toLng = dto.getToLng();
+        var fromOpt = entity.getFromCity() != null && !entity.getFromCity().isBlank()
+                ? CityCenterCoordinates.getLatLng(entity.getFromCity()) : Optional.<double[]>empty();
+        var toOpt = entity.getToCity() != null && !entity.getToCity().isBlank()
+                ? CityCenterCoordinates.getLatLng(entity.getToCity()) : Optional.<double[]>empty();
+        if ((fromLat == null || fromLng == null) && fromOpt.isPresent()) {
+            double[] c = fromOpt.get();
+            fromLat = c[0];
+            fromLng = c[1];
+        }
+        if ((toLat == null || toLng == null) && toOpt.isPresent()) {
+            double[] c = toOpt.get();
+            toLat = c[0];
+            toLng = c[1];
+        }
+        if (java.util.Objects.equals(fromLat, dto.getFromLat())
+                && java.util.Objects.equals(fromLng, dto.getFromLng())
+                && java.util.Objects.equals(toLat, dto.getToLat())
+                && java.util.Objects.equals(toLng, dto.getToLng())) return dto;
+        return RideDto.builder()
+                .id(dto.getId())
+                .driverId(dto.getDriverId())
+                .fromCity(dto.getFromCity())
+                .fromDistrict(dto.getFromDistrict())
+                .toCity(dto.getToCity())
+                .toDistrict(dto.getToDistrict())
+                .cardPaymentAvailable(dto.getCardPaymentAvailable())
+                .fromLat(fromLat)
+                .fromLng(fromLng)
+                .toLat(toLat)
+                .toLng(toLng)
+                .departureTime(dto.getDepartureTime())
+                .availableSeats(dto.getAvailableSeats())
+                .price(dto.getPrice())
+                .carDetails(dto.getCarDetails())
+                .status(dto.getStatus())
+                .build();
     }
 
     /**
@@ -144,16 +306,25 @@ public class RideService {
         if (fromLat != null && fromLng != null) {
             waypoints.add(new double[]{fromLat, fromLng});
         }
-        List<BookingDto> bookings = bookingService.getBookingsForRide(rideId).stream()
-                .filter(b -> (b.getStatus() == com.example.carpool.booking.BookingStatus.APPROVED
-                        || b.getStatus() == com.example.carpool.booking.BookingStatus.PENDING)
-                        && b.getPickupLat() != null && b.getPickupLng() != null)
-                .sorted(fromLat != null && fromLng != null
-                        ? Comparator.comparingDouble(b -> distanceSq(fromLat, fromLng, b.getPickupLat(), b.getPickupLng()))
-                        : Comparator.comparingLong(BookingDto::getId))
+        // Включваме реалните точки за качване И слизане (по stopOrder), не само snap към основната линия.
+        List<BookingDto> activeBookings = bookingService.getBookingsForRide(rideId).stream()
+                .filter(b -> b.getStatus() == com.example.carpool.booking.BookingStatus.APPROVED
+                        || b.getStatus() == com.example.carpool.booking.BookingStatus.PENDING
+                        || b.getStatus() == com.example.carpool.booking.BookingStatus.PENDING_PAYMENT)
                 .collect(Collectors.toList());
-        for (BookingDto b : bookings) {
-            waypoints.add(new double[]{b.getPickupLat(), b.getPickupLng()});
+        java.util.Set<Long> activeStopIds = new java.util.HashSet<>();
+        for (BookingDto b : activeBookings) {
+            if (b.getPickupStopId() != null) activeStopIds.add(b.getPickupStopId());
+            if (b.getDropoffStopId() != null) activeStopIds.add(b.getDropoffStopId());
+        }
+        List<RideStopEntity> orderedStops = rideStopRepository.findByRide_IdOrderByStopOrderAsc(rideId).stream()
+                .filter(s -> activeStopIds.contains(s.getId()))
+                .sorted(Comparator.comparingInt(RideStopEntity::getStopOrder))
+                .collect(Collectors.toList());
+        for (RideStopEntity s : orderedStops) {
+            if (s.getLatitude() != null && s.getLongitude() != null) {
+                waypoints.add(new double[]{s.getLatitude(), s.getLongitude()});
+            }
         }
         if (toLat != null && toLng != null) {
             waypoints.add(new double[]{toLat, toLng});
@@ -165,12 +336,6 @@ public class RideService {
             waypoints.add(new double[]{toLat, toLng});
         }
         return routeService.getDrivingRouteWithWaypoints(waypoints);
-    }
-
-    private static double distanceSq(double lat1, double lng1, double lat2, double lng2) {
-        double dLat = lat2 - lat1;
-        double dLng = lng2 - lng1;
-        return dLat * dLat + dLng * dLng;
     }
 
     private static double haversineKm(double lat1, double lng1, double lat2, double lng2) {
@@ -307,20 +472,35 @@ public class RideService {
         RideEntity ride = rideRepository.findById(rideId)
                 .orElseThrow(() -> new IllegalArgumentException("Ride not found"));
         List<double[]> coords = getPolylineForRide(ride);
-        List<RideStopDto> stops = rideStopRepository.findByRide_IdOrderByStopOrderAsc(rideId).stream()
+        List<RideStopDto> allStops = rideStopRepository.findByRide_IdOrderByStopOrderAsc(rideId).stream()
                 .map(RideStopMapper::toDto)
                 .collect(Collectors.toList());
+        // Показваме само активни pickup/dropoff точки (PENDING/APPROVED), за да изчезват след отмяна.
+        java.util.Set<Long> activeStopIds = bookingService.getBookingsForRide(rideId).stream()
+                .filter(b -> b.getStatus() == com.example.carpool.booking.BookingStatus.PENDING
+                        || b.getStatus() == com.example.carpool.booking.BookingStatus.PENDING_PAYMENT
+                        || b.getStatus() == com.example.carpool.booking.BookingStatus.APPROVED)
+                .flatMap(b -> java.util.stream.Stream.of(b.getPickupStopId(), b.getDropoffStopId()))
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        List<RideStopDto> stops = allStops.stream()
+                .filter(s -> s.getType() == StopType.START
+                        || s.getType() == StopType.END
+                        || activeStopIds.contains(s.getId()))
+                .collect(Collectors.toList());
 
+        // Ако липсват координати, допълваме с център на града за известни градове.
         double fromLat = ride.getFromLat() != null ? ride.getFromLat() : 0;
         double fromLng = ride.getFromLng() != null ? ride.getFromLng() : 0;
         double toLat = ride.getToLat() != null ? ride.getToLat() : 0;
         double toLng = ride.getToLng() != null ? ride.getToLng() : 0;
 
-        if (fromLat == 0 && fromLng == 0 && ride.getFromCity() != null && !ride.getFromCity().isBlank()) {
+        if ((fromLat == 0 && fromLng == 0) && ride.getFromCity() != null && !ride.getFromCity().isBlank()) {
             Optional<double[]> fromOpt = CityCenterCoordinates.getLatLng(ride.getFromCity());
             if (fromOpt.isPresent()) {
                 double[] f = fromOpt.get();
-                fromLat = f[0]; fromLng = f[1];
+                fromLat = f[0];
+                fromLng = f[1];
             } else {
                 List<GeocodingResultDto> fromResults = geocodeService.search(ride.getFromCity() + ", Bulgaria");
                 if (!fromResults.isEmpty()) {
@@ -329,11 +509,12 @@ public class RideService {
                 }
             }
         }
-        if (toLat == 0 && toLng == 0 && ride.getToCity() != null && !ride.getToCity().isBlank()) {
+        if ((toLat == 0 && toLng == 0) && ride.getToCity() != null && !ride.getToCity().isBlank()) {
             Optional<double[]> toOpt = CityCenterCoordinates.getLatLng(ride.getToCity());
             if (toOpt.isPresent()) {
                 double[] t = toOpt.get();
-                toLat = t[0]; toLng = t[1];
+                toLat = t[0];
+                toLng = t[1];
             } else {
                 List<GeocodingResultDto> toResults = geocodeService.search(ride.getToCity() + ", Bulgaria");
                 if (!toResults.isEmpty()) {
@@ -442,20 +623,23 @@ public class RideService {
                     .build();
         }
 
-        double[] suggestedPickup = routeGeometryService.nearestPointOnRoute(pickup[0], pickup[1], polyline);
-        double[] suggestedDropoff = routeGeometryService.nearestPointOnRoute(dropoff[0], dropoff[1], polyline);
+        // Показваме реално избраните точки; не ги "snap"-ваме към линията.
+        double[] suggestedPickup = new double[]{pickup[0], pickup[1]};
+        double[] suggestedDropoff = new double[]{dropoff[0], dropoff[1]};
         double orderPickup = 0;
         double orderDropoff = 1;
         if (polyline.size() >= 2) {
             orderPickup = routeGeometryService.orderAlongRoute(pickup[0], pickup[1], polyline);
             orderDropoff = routeGeometryService.orderAlongRoute(dropoff[0], dropoff[1], polyline);
             if (orderPickup >= orderDropoff - 0.05) {
-                double[] tmp = suggestedPickup;
-                suggestedPickup = suggestedDropoff;
-                suggestedDropoff = tmp;
-                double tmpOrder = orderPickup;
-                orderPickup = orderDropoff;
-                orderDropoff = tmpOrder;
+                return ValidatePointsResponse.builder()
+                        .valid(false)
+                        .suggestedPickupLat(suggestedPickup[0])
+                        .suggestedPickupLng(suggestedPickup[1])
+                        .suggestedDropoffLat(suggestedDropoff[0])
+                        .suggestedDropoffLng(suggestedDropoff[1])
+                        .message("Мястото за качване трябва да е преди мястото за слизане по маршрута.")
+                        .build();
             }
         }
 
@@ -505,20 +689,23 @@ public class RideService {
         RideEntity ride = rideRepository.findById(rideId)
                 .orElseThrow(() -> new IllegalArgumentException("Ride not found"));
         List<double[]> polyline = getPolylineForRide(ride);
-        double orderPickup = routeGeometryService.orderAlongRoute(validation.getSuggestedPickupLat(), validation.getSuggestedPickupLng(), polyline);
-        double orderDropoff = routeGeometryService.orderAlongRoute(validation.getSuggestedDropoffLat(), validation.getSuggestedDropoffLng(), polyline);
+        double orderPickup = routeGeometryService.orderAlongRoute(request.getPickupLat(), request.getPickupLng(), polyline);
+        double orderDropoff = routeGeometryService.orderAlongRoute(request.getDropoffLat(), request.getDropoffLng(), polyline);
         int stopOrderPickup = (int) Math.min(999, Math.max(1, Math.round(orderPickup * 10)));
         int stopOrderDropoff = (int) Math.min(999, Math.max(1, Math.round(orderDropoff * 10)));
         if (stopOrderPickup >= stopOrderDropoff) stopOrderDropoff = stopOrderPickup + 1;
         RideStopEntity pickupStop = RideStopEntity.builder()
-                .ride(ride).name("Качване").latitude(validation.getSuggestedPickupLat()).longitude(validation.getSuggestedPickupLng())
+                .ride(ride).name("Качване").latitude(request.getPickupLat()).longitude(request.getPickupLng())
                 .stopOrder(stopOrderPickup).type(StopType.PICKUP).build();
         RideStopEntity dropoffStop = RideStopEntity.builder()
-                .ride(ride).name("Слизане").latitude(validation.getSuggestedDropoffLat()).longitude(validation.getSuggestedDropoffLng())
+                .ride(ride).name("Слизане").latitude(request.getDropoffLat()).longitude(request.getDropoffLng())
                 .stopOrder(stopOrderDropoff).type(StopType.DROPOFF).build();
         pickupStop = rideStopRepository.save(pickupStop);
         dropoffStop = rideStopRepository.save(dropoffStop);
-        return bookingService.createWithStops(rideId, passengerId, pickupStop.getId(), dropoffStop.getId(), seatsReserved);
+        PaymentMethod paymentMethod = request.getPaymentMethod() != null ? request.getPaymentMethod() : PaymentMethod.CASH;
+        return bookingService.createWithStops(
+                rideId, passengerId, pickupStop.getId(), dropoffStop.getId(), seatsReserved, paymentMethod,
+                request.getPickupLat(), request.getPickupLng());
     }
 
     private static class SegmentOrder {
@@ -549,7 +736,8 @@ public class RideService {
     private int segmentOccupancy(Long rideId, double segmentStartOrder, double segmentEndOrder) {
         List<BookingDto> bookings = bookingService.getBookingsForRide(rideId).stream()
                 .filter(b -> b.getStatus() == com.example.carpool.booking.BookingStatus.APPROVED
-                        || b.getStatus() == com.example.carpool.booking.BookingStatus.PENDING)
+                        || b.getStatus() == com.example.carpool.booking.BookingStatus.PENDING
+                        || b.getStatus() == com.example.carpool.booking.BookingStatus.PENDING_PAYMENT)
                 .collect(Collectors.toList());
         List<RideStopEntity> stops = rideStopRepository.findByRide_IdOrderByStopOrderAsc(rideId);
         java.util.Map<Long, Integer> stopOrderMap = new java.util.HashMap<>();

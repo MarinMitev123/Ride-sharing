@@ -53,6 +53,20 @@ const DROPOFF_ICON = L.divIcon({
   iconAnchor: [13, 13],
 })
 
+const PASSENGER_PICKUP_ICON = L.divIcon({
+  className: 'passenger-pickup-marker',
+  html: '<div style="width:28px;height:28px;border-radius:50%;background:#7c3aed;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.35)"></div>',
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
+})
+
+const DRIVER_LOCATION_ICON = L.divIcon({
+  className: 'driver-location-marker',
+  html: '<div style="width:30px;height:30px;border-radius:50%;background:#0f766e;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700;">🚗</div>',
+  iconSize: [30, 30],
+  iconAnchor: [15, 15],
+})
+
 function FitBounds({ points, zoom }: { points: [number, number][]; zoom?: number }) {
   const map = useMap()
   const mountedRef = useRef(true)
@@ -147,6 +161,10 @@ export interface RideMapProps {
   onDropoffChange?: (lat: number, lng: number) => void
   /** Уникален ключ за MapContainer (използвай при втора карта на същата страница, напр. "driver-route-map") */
   mapKey?: string
+  /** Допълнителни точки за качване на пътници (за изгледа на шофьора) */
+  passengerPickupPoints?: { lat: number; lng: number; title?: string }[]
+  /** Текуща позиция на шофьора при live tracking */
+  driverLocation?: { lat: number; lng: number } | null
 }
 
 export function RideMap({
@@ -162,6 +180,8 @@ export function RideMap({
   dropoffPoint = null,
   onDropoffChange,
   mapKey,
+  passengerPickupPoints = [],
+  driverLocation = null,
 }: RideMapProps) {
   const allPoints = useMemo(() => {
     const pts: [number, number][] = [...routeCoordinates]
@@ -169,8 +189,10 @@ export function RideMap({
     if (pickupPoint) pts.push([pickupPoint.lat, pickupPoint.lng])
     if (dropoffPoint) pts.push([dropoffPoint.lat, dropoffPoint.lng])
     if (suggestedPoint) pts.push([suggestedPoint.lat, suggestedPoint.lng])
+    passengerPickupPoints.forEach((p) => pts.push([p.lat, p.lng]))
+    if (driverLocation) pts.push([driverLocation.lat, driverLocation.lng])
     return pts
-  }, [routeCoordinates, stops, pickupPoint, dropoffPoint, suggestedPoint])
+  }, [routeCoordinates, stops, pickupPoint, dropoffPoint, suggestedPoint, passengerPickupPoints, driverLocation])
 
   const center = useMemo((): [number, number] => {
     if (routeCoordinates.length > 0) {
@@ -213,11 +235,14 @@ export function RideMap({
         }}
       >
         <MapContainer
-          key={mapKey ?? (routeCoordinates.length > 0 ? 'map-with-route' : 'map-initial')}
+          key={mapKey ?? 'ride-map'}
           center={center}
           zoom={DEFAULT_ZOOM}
           style={{ height: '100%', width: '100%', minHeight: 280 }}
           scrollWheelZoom
+          zoomAnimation={false}
+          fadeAnimation={false}
+          markerZoomAnimation={false}
         >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
@@ -271,6 +296,23 @@ export function RideMap({
               draggable={!!(allowPickupSelection && selectingMode === 'dropoff' && onDropoffChange)}
               eventHandlers={onDropoffChange ? { dragend: handleDropoffDragEnd } : undefined}
               title="Място за слизане – плъзнете за преместване"
+            />
+          )}
+
+          {passengerPickupPoints.map((p, idx) => (
+            <Marker
+              key={`passenger-pickup-${idx}-${p.lat}-${p.lng}`}
+              position={[p.lat, p.lng]}
+              icon={PASSENGER_PICKUP_ICON}
+              title={p.title ?? 'Точка за качване на пътник'}
+            />
+          ))}
+
+          {driverLocation && (
+            <Marker
+              position={[driverLocation.lat, driverLocation.lng]}
+              icon={DRIVER_LOCATION_ICON}
+              title="Шофьор"
             />
           )}
         </MapContainer>

@@ -13,6 +13,9 @@ public class BookingDto {
     Long passengerId;
     String passengerName;
     BookingStatus status;
+    PaymentMethod paymentMethod;
+    PaymentStatus paymentStatus;
+    String paymentReference;
     String fromCity;
     String toCity;
     LocalDateTime departureTime;

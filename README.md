@@ -133,6 +133,21 @@ docker-compose up --build
 
 **Тестове:** Backend – `mvn test`. Frontend – `npm run test` (изисква Node 18+ за Vitest).
 
+## Forgot Password локален тест
+
+1. Стартирайте backend и frontend.
+2. Отворете login страницата.
+3. Натиснете „Забравена парола?“
+4. Въведете тестов email.
+5. Ако email съществува, backend ще изпише reset link в конзолата.
+6. Копирайте линка: `http://localhost:5173/reset-password?token=...`
+7. Въведете нова парола.
+8. Влезте с новата парола.
+
+Важно:
+- В реална production среда линкът се изпраща по email.
+- В този дипломен проект за development/demo reset link-ът се показва в backend конзолата, защото се използват тестови/измислени email адреси.
+
 ## Структура на проекта
 
 ```

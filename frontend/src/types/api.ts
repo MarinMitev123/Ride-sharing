@@ -22,12 +22,16 @@ export interface ForgotPasswordRequest {
 
 export interface ForgotPasswordResponse {
   message: string
-  resetLink: string | null
 }
 
 export interface ResetPasswordRequest {
   token: string
   newPassword: string
+  confirmPassword: string
+}
+
+export interface MessageResponse {
+  message: string
 }
 
 export interface AuthResponse {
@@ -44,6 +48,7 @@ export interface UserDto {
   email: string
   name: string
   phone: string | null
+  iban?: string | null
   role: UserRole
   status: UserStatus
   ratingAverage: number | null
@@ -56,7 +61,10 @@ export interface RideDto {
   id: number
   driverId: number
   fromCity: string
+  fromDistrict?: string | null
   toCity: string
+  toDistrict?: string | null
+  cardPaymentAvailable?: boolean
   fromLat?: number | null
   fromLng?: number | null
   toLat?: number | null
@@ -70,7 +78,9 @@ export interface RideDto {
 
 export interface RideCreateRequest {
   fromCity: string
+  fromDistrict?: string
   toCity: string
+  toDistrict?: string
   fromLat?: number
   fromLng?: number
   toLat?: number
@@ -92,6 +102,16 @@ export interface RideStopDto {
   longitude: number
   stopOrder: number
   type: StopType
+}
+
+export interface DriverLocationDto {
+  rideId: number
+  driverId: number
+  targetPassengerId: number
+  latitude: number
+  longitude: number
+  isActive: boolean
+  updatedAt: string
 }
 
 export interface ValidatePointsResponse {
@@ -130,6 +150,7 @@ export interface BookRideRequest {
   dropoffLat: number
   dropoffLng: number
   seatsReserved?: number
+  paymentMethod?: 'CASH' | 'CARD'
 }
 
 /** Bookings */
@@ -139,6 +160,9 @@ export interface BookingDto {
   passengerId: number
   passengerName?: string
   status: string
+  paymentMethod?: 'CASH' | 'CARD'
+  paymentStatus?: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED' | 'CASH_ON_RIDE'
+  paymentReference?: string | null
   fromCity?: string
   toCity?: string
   departureTime?: string
@@ -147,6 +171,27 @@ export interface BookingDto {
   pickupAddress?: string | null
   pickupNeighborhood?: string | null
   passengerNote?: string | null
+  pickupStopId?: number | null
+  dropoffStopId?: number | null
+  seatsReserved?: number | null
+}
+
+export interface CreateCheckoutSessionResponse {
+  sessionId: string
+}
+
+export type NotificationType = 'BOOKING_REQUEST' | 'BOOKING_APPROVED' | 'BOOKING_REJECTED' | 'PAYMENT_REQUIRED'
+
+export interface NotificationDto {
+  id: number
+  recipientUserId: number
+  type: NotificationType
+  title: string
+  message: string
+  bookingId?: number | null
+  rideId?: number | null
+  isRead: boolean
+  createdAt: string
 }
 
 export interface PickupPoint {
@@ -156,20 +201,33 @@ export interface PickupPoint {
 }
 
 /** Chat */
-export interface ChatMessageDto {
+export interface ConversationDto {
   id: number
-  rideId: number
-  senderId: number
-  senderName: string
-  receiverId: number
-  receiverName: string
-  content: string
-  sentAt: string
+  createdAt: string
+  otherUser: {
+    id: number
+    firstName?: string | null
+    lastName?: string | null
+    username: string
+  }
+  ride: {
+    id: number
+    origin: string
+    destination: string
+    departureTime: string
+  }
 }
 
-export interface ChatMessageCreateRequest {
-  rideId: number
-  receiverId: number
+export interface MessageDto {
+  id: number
+  conversationId: number
+  senderId: number
+  senderName?: string
+  content: string
+  createdAt: string
+}
+
+export interface MessageCreateRequest {
   content: string
 }
 

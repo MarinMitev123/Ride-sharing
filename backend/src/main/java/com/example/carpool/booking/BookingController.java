@@ -16,6 +16,7 @@ import java.util.List;
 public class BookingController {
 
     private final BookingService bookingService;
+    private final StripePaymentService stripePaymentService;
     private final UserRepository userRepository;
 
     private Long currentUserId(UserDetails userDetails) {
@@ -92,5 +93,26 @@ public class BookingController {
         Long driverId = currentUserId(userDetails);
         bookingService.removePassengerByDriver(id, driverId);
         return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/bookings/{id}/pay-card")
+    public ResponseEntity<CreateCheckoutSessionResponse> payByCard(@AuthenticationPrincipal UserDetails userDetails,
+                                                                    @PathVariable Long id) {
+        Long passengerId = currentUserId(userDetails);
+        return ResponseEntity.ok(stripePaymentService.createCheckoutSession(id, passengerId));
+    }
+
+    @PatchMapping("/bookings/{id}/mark-cash-paid")
+    public ResponseEntity<BookingDto> markCashPaid(@AuthenticationPrincipal UserDetails userDetails,
+                                                   @PathVariable Long id) {
+        Long driverId = currentUserId(userDetails);
+        return ResponseEntity.ok(bookingService.markCashPaidByDriver(id, driverId));
+    }
+
+    @PostMapping("/payments/webhook")
+    public ResponseEntity<Void> stripeWebhook(@RequestBody String payload,
+                                              @RequestHeader(value = "Stripe-Signature", required = false) String signature) {
+        stripePaymentService.handleWebhook(payload, signature);
+        return ResponseEntity.ok().build();
     }
 }

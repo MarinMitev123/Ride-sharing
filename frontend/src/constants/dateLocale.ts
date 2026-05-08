@@ -31,6 +31,14 @@ export function toApiDateTime(
   return `${date}T${h}:${min}:00`
 }
 
+/** Локален календарен ден (не UTC) → YYYY-MM-DD за API/филтри */
+export function localDateToYYYYMMDD(d: Date = new Date()): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 /** Преобразува YYYY-MM-DD → dd/mm/yyyy за показ в полето */
 export function apiDateToBg(apiDate: string): string {
   const [y, m, d] = apiDate.split('-').map(Number)

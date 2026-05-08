@@ -14,6 +14,7 @@ public class UserMapper {
                 .email(entity.getEmail())
                 .name(entity.getName())
                 .phone(entity.getPhone())
+                .iban(entity.getIban())
                 .role(entity.getRole())
                 .status(entity.getStatus())
                 .ratingAverage(entity.getRatingAverage())

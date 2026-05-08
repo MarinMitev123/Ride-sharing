@@ -31,6 +31,18 @@ public class BookingEntity {
     @Column(nullable = false)
     private BookingStatus status;
 
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private PaymentMethod paymentMethod = PaymentMethod.CASH;
+
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private PaymentStatus paymentStatus = PaymentStatus.CASH_ON_RIDE;
+    @Column(length = 255)
+    private String paymentReference;
+
     @ManyToOne
     @JoinColumn(name = "pickup_stop_id")
     private RideStopEntity pickupStop;
@@ -40,6 +52,7 @@ public class BookingEntity {
     private RideStopEntity dropoffStop;
 
     @Column(name = "seats_reserved", nullable = false)
+    @Builder.Default
     private Integer seatsReserved = 1;
 
     private Double pickupLat;

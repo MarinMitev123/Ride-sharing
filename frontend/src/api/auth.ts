@@ -3,9 +3,8 @@ import type {
   LoginRequest,
   RegisterRequest,
   ChangePasswordRequest,
-  ForgotPasswordRequest,
   ForgotPasswordResponse,
-  ResetPasswordRequest,
+  MessageResponse,
 } from '../types/api'
 import { apiRequest } from './client'
 
@@ -17,17 +16,17 @@ export async function login(body: LoginRequest, token?: string | null): Promise<
   })
 }
 
-export async function forgotPassword(body: ForgotPasswordRequest): Promise<ForgotPasswordResponse> {
+export async function forgotPassword(email: string): Promise<ForgotPasswordResponse> {
   return apiRequest<ForgotPasswordResponse>('/auth/forgot-password', {
     method: 'POST',
-    body: JSON.stringify(body),
+    body: JSON.stringify({ email }),
   })
 }
 
-export async function resetPassword(body: ResetPasswordRequest): Promise<void> {
-  return apiRequest<void>('/auth/reset-password', {
+export async function resetPassword(token: string, newPassword: string, confirmPassword: string): Promise<MessageResponse> {
+  return apiRequest<MessageResponse>('/auth/reset-password', {
     method: 'POST',
-    body: JSON.stringify(body),
+    body: JSON.stringify({ token, newPassword, confirmPassword }),
   })
 }
 

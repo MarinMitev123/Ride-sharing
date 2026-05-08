@@ -4,6 +4,7 @@ import type { UserDto } from '../types/api'
 export interface UpdateProfileRequest {
   name?: string
   phone?: string
+  iban?: string
 }
 
 export async function getCurrentUser(token: string): Promise<UserDto> {

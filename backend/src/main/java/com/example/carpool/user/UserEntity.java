@@ -4,7 +4,6 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
-import java.time.Instant;
 
 @Entity
 @Table(name = "users")
@@ -30,6 +29,9 @@ public class UserEntity {
 
     private String phone;
 
+    @Column(length = 34)
+    private String iban;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private UserRole role;
@@ -41,8 +43,5 @@ public class UserEntity {
     @Column(precision = 2, scale = 1)
     private BigDecimal ratingAverage;
 
-    private String resetToken;
-
-    private Instant resetTokenExpiry;
 }
 

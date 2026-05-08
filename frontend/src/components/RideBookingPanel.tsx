@@ -18,9 +18,11 @@ export interface RideBookingPanelProps {
     pickupLng: number,
     dropoffLat: number,
     dropoffLng: number,
-    seatsReserved: number
+    seatsReserved: number,
+    paymentMethod: 'CASH' | 'CARD'
   ) => Promise<void>
   disabled?: boolean
+  cardPaymentAvailable?: boolean
 }
 
 export function RideBookingPanel({
@@ -29,8 +31,10 @@ export function RideBookingPanel({
   suggestedDropoff,
   onBook,
   disabled = false,
+  cardPaymentAvailable = true,
 }: RideBookingPanelProps) {
   const [seats, setSeats] = useState(1)
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CARD'>('CASH')
   const [booking, setBooking] = useState(false)
   const [error, setError] = useState('')
 
@@ -47,7 +51,8 @@ export function RideBookingPanel({
         suggestedPickup.lng,
         suggestedDropoff.lat,
         suggestedDropoff.lng,
-        seats
+        seats,
+        paymentMethod
       )
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Грешка при резервация')
@@ -55,6 +60,8 @@ export function RideBookingPanel({
       setBooking(false)
     }
   }
+
+  const cardDisabled = !cardPaymentAvailable
 
   return (
     <div style={{ marginTop: 16, padding: 12, border: '1px solid #e2e8f0', borderRadius: 8 }}>
@@ -70,6 +77,39 @@ export function RideBookingPanel({
           style={{ width: 60, padding: 4 }}
         />
       </label>
+      <div style={{ marginTop: 10, marginBottom: 2 }}>
+        <p style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 600 }}>Начин на плащане:</p>
+        <label style={{ marginRight: 14, fontSize: 14 }}>
+          <input
+            type="radio"
+            name="paymentMethod"
+            checked={paymentMethod === 'CASH'}
+            onChange={() => setPaymentMethod('CASH')}
+            disabled={booking}
+          />{' '}
+          Кеш (при качване)
+        </label>
+        <label style={{ fontSize: 14 }}>
+          <input
+            type="radio"
+            name="paymentMethod"
+            checked={paymentMethod === 'CARD'}
+            onChange={() => setPaymentMethod('CARD')}
+            disabled={booking || cardDisabled}
+          />{' '}
+          Карта (без IBAN)
+        </label>
+      </div>
+      {cardDisabled && (
+        <p style={{ margin: '4px 0 0', fontSize: 12, color: '#b45309' }}>
+          Картово плащане е изключено за тази обява, защото шофьорът няма въведен IBAN.
+        </p>
+      )}
+      {paymentMethod === 'CARD' && (
+        <p style={{ margin: '4px 0 0', fontSize: 12, color: '#64748b' }}>
+          Ще се отвори защитена страница за плащане с карта. Не се изисква IBAN.
+        </p>
+      )}
       <button
         type="button"
         onClick={handleBook}

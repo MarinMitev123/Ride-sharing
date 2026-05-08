@@ -76,6 +76,25 @@ public class RideController {
         return ResponseEntity.ok(rideService.getDriverRoute(id, userId));
     }
 
+    @PostMapping("/{id}/driver-location")
+    public ResponseEntity<DriverLocationDto> upsertDriverLocation(@PathVariable Long id,
+                                                                  @AuthenticationPrincipal UserDetails userDetails,
+                                                                  @Valid @RequestBody DriverLocationUpdateRequest request) {
+        Long userId = userRepository.findByEmail(userDetails.getUsername())
+                .orElseThrow(() -> new IllegalArgumentException("User not found"))
+                .getId();
+        return ResponseEntity.ok(rideService.upsertDriverLocation(id, userId, request));
+    }
+
+    @GetMapping("/{id}/driver-location")
+    public ResponseEntity<DriverLocationDto> getDriverLocation(@PathVariable Long id,
+                                                               @AuthenticationPrincipal UserDetails userDetails) {
+        Long userId = userRepository.findByEmail(userDetails.getUsername())
+                .orElseThrow(() -> new IllegalArgumentException("User not found"))
+                .getId();
+        return ResponseEntity.ok(rideService.getDriverLocation(id, userId));
+    }
+
     @GetMapping("/{id}/route")
     public ResponseEntity<RideRouteDto> getRoute(@PathVariable Long id) {
         return ResponseEntity.ok(rideService.getRouteWithStops(id));
@@ -106,6 +125,15 @@ public class RideController {
                 .orElseThrow(() -> new IllegalArgumentException("User not found"))
                 .getId();
         return ResponseEntity.ok(rideService.bookRide(id, userId, request));
+    }
+
+    @PostMapping("/{id}/finish")
+    public ResponseEntity<RideDto> finishRide(@PathVariable Long id,
+                                              @AuthenticationPrincipal UserDetails userDetails) {
+        Long userId = userRepository.findByEmail(userDetails.getUsername())
+                .orElseThrow(() -> new IllegalArgumentException("User not found"))
+                .getId();
+        return ResponseEntity.ok(rideService.finishRide(id, userId));
     }
 
     @PostMapping

@@ -1,5 +1,8 @@
 package com.example.carpool.booking;
 
+import com.example.carpool.chat.ConversationService;
+import com.example.carpool.notification.NotificationService;
+import com.example.carpool.notification.NotificationType;
 import com.example.carpool.ride.RideEntity;
 import com.example.carpool.ride.RideRepository;
 import com.example.carpool.ride.RideStatus;
@@ -23,6 +26,8 @@ public class BookingService {
     private final RideRepository rideRepository;
     private final RideStopRepository rideStopRepository;
     private final UserRepository userRepository;
+    private final ConversationService conversationService;
+    private final NotificationService notificationService;
 
     @Transactional
     public BookingDto create(Long rideId, Long passengerId) {
@@ -34,7 +39,7 @@ public class BookingService {
             throw new IllegalArgumentException("Driver cannot book own ride");
         }
         if (bookingRepository.existsByRide_IdAndPassenger_IdAndStatusIn(
-                rideId, passengerId, List.of(BookingStatus.PENDING, BookingStatus.APPROVED))) {
+                rideId, passengerId, List.of(BookingStatus.PENDING, BookingStatus.PENDING_PAYMENT, BookingStatus.APPROVED))) {
             throw new IllegalArgumentException("Already booked");
         }
         if (ride.getAvailableSeats() == null || ride.getAvailableSeats() <= 0) {
@@ -46,11 +51,14 @@ public class BookingService {
                 .status(BookingStatus.PENDING)
                 .build();
         entity = bookingRepository.save(entity);
+        conversationService.ensureConversationForBooking(ride.getId(), ride.getDriver().getId(), passenger.getId());
+        notifyDriverForBookingRequest(ride, passenger, entity);
         return BookingMapper.toDto(entity);
     }
 
     @Transactional
-    public BookingDto createWithStops(Long rideId, Long passengerId, Long pickupStopId, Long dropoffStopId, int seatsReserved) {
+    public BookingDto createWithStops(Long rideId, Long passengerId, Long pickupStopId, Long dropoffStopId, int seatsReserved,
+                                      PaymentMethod paymentMethod, Double passengerPickupLat, Double passengerPickupLng) {
         RideEntity ride = rideRepository.findById(rideId)
                 .orElseThrow(() -> new IllegalArgumentException("Ride not found"));
         UserEntity passenger = userRepository.findById(passengerId)
@@ -59,7 +67,7 @@ public class BookingService {
             throw new IllegalArgumentException("Driver cannot book own ride");
         }
         if (bookingRepository.existsByRide_IdAndPassenger_IdAndStatusIn(
-                rideId, passengerId, List.of(BookingStatus.PENDING, BookingStatus.APPROVED))) {
+                rideId, passengerId, List.of(BookingStatus.PENDING, BookingStatus.PENDING_PAYMENT, BookingStatus.APPROVED))) {
             throw new IllegalArgumentException("Already booked");
         }
         int available = ride.getAvailableSeats() != null ? ride.getAvailableSeats() : 0;
@@ -73,18 +81,24 @@ public class BookingService {
         if (!pickupStop.getRide().getId().equals(rideId) || !dropoffStop.getRide().getId().equals(rideId)) {
             throw new IllegalArgumentException("Stops do not belong to this ride");
         }
+        PaymentMethod safePaymentMethod = paymentMethod != null ? paymentMethod : PaymentMethod.CASH;
+        PaymentStatus paymentStatus = safePaymentMethod == PaymentMethod.CARD ? PaymentStatus.PENDING : PaymentStatus.CASH_ON_RIDE;
         BookingEntity entity = BookingEntity.builder()
                 .ride(ride)
                 .passenger(passenger)
                 .status(BookingStatus.PENDING)
+                .paymentMethod(safePaymentMethod)
+                .paymentStatus(paymentStatus)
                 .pickupStop(pickupStop)
                 .dropoffStop(dropoffStop)
                 .seatsReserved(seatsReserved)
-                .pickupLat(pickupStop.getLatitude())
-                .pickupLng(pickupStop.getLongitude())
+                .pickupLat(passengerPickupLat != null ? passengerPickupLat : pickupStop.getLatitude())
+                .pickupLng(passengerPickupLng != null ? passengerPickupLng : pickupStop.getLongitude())
                 .pickupAddress(pickupStop.getName())
                 .build();
         entity = bookingRepository.save(entity);
+        conversationService.ensureConversationForBooking(ride.getId(), ride.getDriver().getId(), passenger.getId());
+        notifyDriverForBookingRequest(ride, passenger, entity);
         return BookingMapper.toDto(entity);
     }
 
@@ -116,7 +130,13 @@ public class BookingService {
     @Transactional(readOnly = true)
     public List<BookingDto> getActiveBookingsForDriver(Long driverId) {
         LocalDateTime cutoff = LocalDateTime.now().minusHours(HOURS_AFTER_DEPARTURE_VISIBLE);
-        return bookingRepository.findActiveByDriverId(driverId, BookingStatus.PENDING, BookingStatus.APPROVED, cutoff).stream()
+        return bookingRepository.findActiveByDriverId(
+                        driverId,
+                        BookingStatus.PENDING,
+                        BookingStatus.APPROVED,
+                        BookingStatus.PENDING_PAYMENT,
+                        cutoff
+                ).stream()
                 .map(BookingMapper::toDto)
                 .collect(Collectors.toList());
     }
@@ -149,7 +169,28 @@ public class BookingService {
         if (entity.getStatus() != BookingStatus.PENDING) {
             throw new IllegalArgumentException("Booking not pending");
         }
-        entity.setStatus(BookingStatus.APPROVED);
+        if (entity.getPaymentMethod() == PaymentMethod.CARD) {
+            entity.setStatus(BookingStatus.PENDING_PAYMENT);
+            entity.setPaymentStatus(PaymentStatus.PENDING);
+            notificationService.create(
+                    entity.getPassenger().getId(),
+                    NotificationType.PAYMENT_REQUIRED,
+                    "Резервацията е одобрена - необходимо е плащане",
+                    "Вашата резервация беше одобрена. Моля, платете с карта.",
+                    entity,
+                    ride
+            );
+        } else {
+            entity.setStatus(BookingStatus.APPROVED);
+            notificationService.create(
+                    entity.getPassenger().getId(),
+                    NotificationType.BOOKING_APPROVED,
+                    "Резервацията е одобрена",
+                    "Вашата резервация беше одобрена",
+                    entity,
+                    ride
+            );
+        }
         entity = bookingRepository.save(entity);
         int seats = entity.getSeatsReserved() != null ? entity.getSeatsReserved() : 1;
         ride.setAvailableSeats(ride.getAvailableSeats() - seats);
@@ -173,6 +214,14 @@ public class BookingService {
         }
         entity.setStatus(BookingStatus.REJECTED);
         entity = bookingRepository.save(entity);
+        notificationService.create(
+                entity.getPassenger().getId(),
+                NotificationType.BOOKING_REJECTED,
+                "Резервацията е отказана",
+                "Вашата заявка за резервация беше отказана",
+                entity,
+                ride
+        );
         return BookingMapper.toDto(entity);
     }
 
@@ -184,7 +233,12 @@ public class BookingService {
             throw new IllegalArgumentException("Not your booking");
         }
         boolean wasApproved = entity.getStatus() == BookingStatus.APPROVED;
+        boolean wasPaidByCard = entity.getPaymentMethod() == PaymentMethod.CARD
+                && entity.getPaymentStatus() == PaymentStatus.PAID;
         entity.setStatus(BookingStatus.CANCELED);
+        if (wasPaidByCard) {
+            entity.setPaymentStatus(PaymentStatus.REFUNDED);
+        }
         bookingRepository.save(entity);
         if (wasApproved) {
             RideEntity ride = entity.getRide();
@@ -208,7 +262,12 @@ public class BookingService {
         if (entity.getStatus() != BookingStatus.APPROVED) {
             throw new IllegalArgumentException("Can only remove approved passengers");
         }
+        boolean wasPaidByCard = entity.getPaymentMethod() == PaymentMethod.CARD
+                && entity.getPaymentStatus() == PaymentStatus.PAID;
         entity.setStatus(BookingStatus.CANCELED);
+        if (wasPaidByCard) {
+            entity.setPaymentStatus(PaymentStatus.REFUNDED);
+        }
         bookingRepository.save(entity);
         int seats = entity.getSeatsReserved() != null ? entity.getSeatsReserved() : 1;
         ride.setAvailableSeats(ride.getAvailableSeats() + seats);
@@ -216,5 +275,55 @@ public class BookingService {
             ride.setStatus(RideStatus.OPEN);
         }
         rideRepository.save(ride);
+    }
+
+    @Transactional
+    public BookingDto payByCard(Long bookingId, Long passengerId) {
+        BookingEntity entity = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new IllegalArgumentException("Booking not found"));
+        if (!entity.getPassenger().getId().equals(passengerId)) {
+            throw new IllegalArgumentException("Not your booking");
+        }
+        if (entity.getStatus() == BookingStatus.CANCELED || entity.getStatus() == BookingStatus.REJECTED) {
+            throw new IllegalArgumentException("Cannot pay canceled/rejected booking");
+        }
+        entity.setPaymentMethod(PaymentMethod.CARD);
+        entity.setPaymentStatus(PaymentStatus.PENDING);
+        return BookingMapper.toDto(bookingRepository.save(entity));
+    }
+
+    @Transactional
+    public BookingDto markCashPaidByDriver(Long bookingId, Long driverId) {
+        BookingEntity entity = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new IllegalArgumentException("Booking not found"));
+        RideEntity ride = entity.getRide();
+        if (ride.getDriver() == null || !ride.getDriver().getId().equals(driverId)) {
+            throw new IllegalArgumentException("Not driver of this ride");
+        }
+        if (entity.getStatus() != BookingStatus.APPROVED) {
+            throw new IllegalArgumentException("Cash can be marked paid only for approved booking");
+        }
+        entity.setPaymentMethod(PaymentMethod.CASH);
+        entity.setPaymentStatus(PaymentStatus.PAID);
+        return BookingMapper.toDto(bookingRepository.save(entity));
+    }
+
+    private void notifyDriverForBookingRequest(RideEntity ride, UserEntity passenger, BookingEntity booking) {
+        if (ride.getDriver() == null || ride.getDriver().getId() == null) {
+            return;
+        }
+        String passengerName = passenger.getName() != null && !passenger.getName().isBlank()
+                ? passenger.getName()
+                : "Пътник";
+        String message = passengerName + " иска да запази място за "
+                + ride.getFromCity() + " → " + ride.getToCity();
+        notificationService.create(
+                ride.getDriver().getId(),
+                NotificationType.BOOKING_REQUEST,
+                "Нова заявка за резервация",
+                message,
+                booking,
+                ride
+        );
     }
 }

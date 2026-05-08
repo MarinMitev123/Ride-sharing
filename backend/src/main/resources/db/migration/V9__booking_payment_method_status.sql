@@ -1,0 +1,4 @@
+ALTER TABLE bookings
+    ADD COLUMN payment_method VARCHAR(20) NOT NULL DEFAULT 'CASH',
+    ADD COLUMN payment_status VARCHAR(20) NOT NULL DEFAULT 'CASH_ON_RIDE';
+

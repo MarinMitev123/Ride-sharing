@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getRidesFiltered } from '../api/rides'
 import { useAuth } from '../contexts/AuthContext'
-import { useInView } from '../hooks/useInView'
 import { CITIES } from '../constants/cities'
+import { localDateToYYYYMMDD } from '../constants/dateLocale'
 import type { RideDto } from '../types/api'
 
 const FAVORITES_KEY = 'carpool_favorites'
@@ -40,6 +40,10 @@ function formatDateTime(iso: string) {
   })
 }
 
+function formatCityWithDistrict(city: string, district?: string | null) {
+  return district && district.trim() ? `${city} (${district.trim()})` : city
+}
+
 export function RidesList() {
   const { token } = useAuth()
   const [rides, setRides] = useState<RideDto[]>([])
@@ -53,7 +57,6 @@ export function RidesList() {
   const [sortBy] = useState('departureTime')
   const [sortDir] = useState('asc')
   const [favorites, setFavorites] = useState<FavoriteRoute[]>(() => loadFavorites())
-  const { ref: listRef, inView: listInView } = useInView({ threshold: 0.05 })
 
   const currentIsFavorite = filterFromCity && filterToCity && favorites.some(
     (f) => f.fromCity === filterFromCity && f.toCity === filterToCity
@@ -81,8 +84,7 @@ export function RidesList() {
   const applyPopularRoute = (from: string, to: string) => {
     setFilterFromCity(from)
     setFilterToCity(to)
-    const today = new Date()
-    setFilterDate(today.toISOString().slice(0, 10))
+    setFilterDate(localDateToYYYYMMDD(new Date()))
     setPage(0)
   }
 
@@ -293,13 +295,15 @@ export function RidesList() {
         </div>
       ) : (
         <>
-        <ul ref={listRef} className={`rides-list scroll-reveal ${listInView ? 'scroll-reveal-visible' : ''}`}>
+        <ul className="rides-list">
           {rides.map((ride, index) => (
             <li key={ride.id} className="animate-fade-in-up" style={{ animationDelay: `${index * 0.05}s` }}>
               <Link to={`/rides/${ride.id}`} className="ride-card">
-                <span className="route">{ride.fromCity} → {ride.toCity}</span>
+                <span className="route">
+                  {formatCityWithDistrict(ride.fromCity, ride.fromDistrict)} → {formatCityWithDistrict(ride.toCity, ride.toDistrict)}
+                </span>
                 <span className="meta">
-                  {formatDateTime(ride.departureTime)} · {ride.availableSeats} места · {ride.price} лв
+                  {formatDateTime(ride.departureTime)} · {ride.availableSeats} места · {ride.price} €
                 </span>
                 {ride.carDetails && <span className="car">{ride.carDetails}</span>}
               </Link>

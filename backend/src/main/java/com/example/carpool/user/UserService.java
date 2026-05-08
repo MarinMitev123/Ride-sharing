@@ -45,6 +45,10 @@ public class UserService {
         if (request.phone() != null) {
             user.setPhone(request.phone().trim().isEmpty() ? null : request.phone().trim());
         }
+        if (request.iban() != null) {
+            String normalized = request.iban().replaceAll("\\s+", "").toUpperCase();
+            user.setIban(normalized.isEmpty() ? null : normalized);
+        }
         return UserMapper.toDto(userRepository.save(user));
     }
 }

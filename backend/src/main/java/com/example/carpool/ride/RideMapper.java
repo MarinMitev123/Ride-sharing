@@ -12,11 +12,17 @@ public class RideMapper {
             return null;
         }
         Long driverId = entity.getDriver() != null ? entity.getDriver().getId() : null;
+        boolean cardPaymentAvailable = entity.getDriver() != null
+                && entity.getDriver().getIban() != null
+                && !entity.getDriver().getIban().isBlank();
         return RideDto.builder()
                 .id(entity.getId())
                 .driverId(driverId)
                 .fromCity(entity.getFromCity())
+                .fromDistrict(entity.getFromDistrict())
                 .toCity(entity.getToCity())
+                .toDistrict(entity.getToDistrict())
+                .cardPaymentAvailable(cardPaymentAvailable)
                 .fromLat(entity.getFromLat())
                 .fromLng(entity.getFromLng())
                 .toLat(entity.getToLat())
@@ -33,7 +39,9 @@ public class RideMapper {
         return RideEntity.builder()
                 .driver(driver)
                 .fromCity(request.fromCity())
+                .fromDistrict(request.fromDistrict())
                 .toCity(request.toCity())
+                .toDistrict(request.toDistrict())
                 .fromLat(request.fromLat())
                 .fromLng(request.fromLng())
                 .toLat(request.toLat())

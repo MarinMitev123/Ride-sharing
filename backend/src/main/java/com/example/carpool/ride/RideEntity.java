@@ -27,8 +27,14 @@ public class RideEntity {
     @Column(nullable = false)
     private String fromCity;
 
+    @Column(length = 255)
+    private String fromDistrict;
+
     @Column(nullable = false)
     private String toCity;
+
+    @Column(length = 255)
+    private String toDistrict;
 
     private Double fromLat;
     private Double fromLng;

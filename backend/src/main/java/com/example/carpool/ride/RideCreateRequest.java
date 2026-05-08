@@ -10,7 +10,9 @@ import java.time.LocalDateTime;
 
 public record RideCreateRequest(
         @NotBlank String fromCity,
+        String fromDistrict,
         @NotBlank String toCity,
+        String toDistrict,
         Double fromLat,
         Double fromLng,
         Double toLat,

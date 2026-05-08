@@ -43,6 +43,39 @@ body {
   min-height: 100vh;
 }
 
+/* Рейтинг със звезди */
+.star-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.star-rating-star {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  color: #e5e7eb;
+  font-size: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease, transform 0.1s ease;
+}
+.star-rating-star::before {
+  content: '★';
+  font-size: 18px;
+}
+.star-rating-star--filled {
+  color: #f59e0b;
+}
+.star-rating-star:hover {
+  transform: translateY(-1px) scale(1.05);
+}
+.star-rating-star--read-only {
+  cursor: default;
+}
+
 /* Анимации */
 @keyframes fadeInUp {
   from {
@@ -154,14 +187,16 @@ body {
 .ride-map-wrapper .leaflet-marker-icon.ride-stop-marker,
 .ride-map-wrapper .leaflet-marker-icon.pickup-marker,
 .ride-map-wrapper .leaflet-marker-icon.suggested-point-marker,
-.ride-map-wrapper .leaflet-marker-icon.dropoff-marker {
+.ride-map-wrapper .leaflet-marker-icon.dropoff-marker,
+.ride-map-wrapper .leaflet-marker-icon.passenger-pickup-marker {
   background: transparent !important;
   border: none !important;
 }
 .ride-map-wrapper .leaflet-marker-icon.ride-stop-marker div,
 .ride-map-wrapper .leaflet-marker-icon.pickup-marker div,
 .ride-map-wrapper .leaflet-marker-icon.suggested-point-marker div,
-.ride-map-wrapper .leaflet-marker-icon.dropoff-marker div {
+.ride-map-wrapper .leaflet-marker-icon.dropoff-marker div,
+.ride-map-wrapper .leaflet-marker-icon.passenger-pickup-marker div {
   display: block !important;
   visibility: visible !important;
 }
@@ -451,6 +486,77 @@ body {
 .page-form .form-footer a {
   color: var(--color-primary);
   font-weight: 500;
+}
+
+.page-form select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+  background: var(--color-bg-card);
+  cursor: pointer;
+}
+
+/* Създай пътуване – секции с иконки */
+.create-ride-section {
+  margin-bottom: 28px;
+}
+.create-ride-section:last-of-type {
+  margin-bottom: 24px;
+}
+.create-ride-section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 16px;
+  font-family: var(--font-heading);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.create-ride-section-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+}
+.create-ride-date-time {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 16px;
+  align-items: end;
+}
+.create-ride-date-time .date-input-with-calendar {
+  width: 100%;
+  display: flex;
+}
+.create-ride-time-selects {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  height: 42px;
+  box-sizing: border-box;
+}
+.create-ride-time-selects select {
+  min-width: 0;
+  flex: 1;
+  height: 42px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  margin-top: 0;
+}
+.create-ride-label-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.create-ride-label-icon {
+  display: inline-flex;
+  color: var(--color-primary);
 }
 
 .page-content h1 {
@@ -864,4 +970,122 @@ body {
   background: #eff6ff;
   border: 1px solid #93c5fd;
   color: #1e40af;
+}
+
+.notifications-nav {
+  position: relative;
+}
+.notifications-bell-btn {
+  position: relative;
+  border: none;
+  background: transparent;
+  color: var(--color-header-muted);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 1rem;
+}
+.notifications-bell-btn:hover {
+  color: var(--color-header-text);
+  background: rgba(255, 255, 255, 0.15);
+}
+.notifications-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+.notifications-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 360px;
+  max-height: 420px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  z-index: 30;
+  color: var(--color-text);
+}
+.notifications-header {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: #f8fafc;
+}
+.notifications-empty {
+  padding: 14px 12px;
+  color: var(--color-text-muted);
+  font-size: 0.92rem;
+}
+.notifications-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.notification-item {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.notification-item-unread {
+  background: #f0fdfa;
+}
+.notification-item-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.notification-item-message {
+  font-size: 0.88rem;
+  color: #334155;
+}
+.notification-item-meta {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+.notification-action-link {
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.8rem;
+}
+.notification-action-link:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+.notification-actions-row {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+.notification-reject-btn {
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  border-radius: 8px;
+  border: 1px solid #dc2626;
+  background: #fff;
+  color: #dc2626;
+  cursor: pointer;
+}
+.notification-reject-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
