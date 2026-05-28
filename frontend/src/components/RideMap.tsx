@@ -67,6 +67,14 @@ const DRIVER_LOCATION_ICON = L.divIcon({
   iconAnchor: [15, 15],
 })
 
+/** Текуща GPS позиция на потребителя (напр. шофьор при отваряне на картата). */
+const MY_LOCATION_ICON = L.divIcon({
+  className: 'my-gps-marker',
+  html: '<div style="width:22px;height:22px;border-radius:50%;background:#0284c7;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.35);"></div>',
+  iconSize: [22, 22],
+  iconAnchor: [11, 11],
+})
+
 function FitBounds({ points, zoom }: { points: [number, number][]; zoom?: number }) {
   const map = useMap()
   const mountedRef = useRef(true)
@@ -165,6 +173,8 @@ export interface RideMapProps {
   passengerPickupPoints?: { lat: number; lng: number; title?: string }[]
   /** Текуща позиция на шофьора при live tracking */
   driverLocation?: { lat: number; lng: number } | null
+  /** GPS на текущия потребител – центриране и маркер (напр. „откъде тръгвам“) */
+  myLocation?: { lat: number; lng: number } | null
 }
 
 export function RideMap({
@@ -182,6 +192,7 @@ export function RideMap({
   mapKey,
   passengerPickupPoints = [],
   driverLocation = null,
+  myLocation = null,
 }: RideMapProps) {
   const allPoints = useMemo(() => {
     const pts: [number, number][] = [...routeCoordinates]
@@ -191,17 +202,19 @@ export function RideMap({
     if (suggestedPoint) pts.push([suggestedPoint.lat, suggestedPoint.lng])
     passengerPickupPoints.forEach((p) => pts.push([p.lat, p.lng]))
     if (driverLocation) pts.push([driverLocation.lat, driverLocation.lng])
+    if (myLocation) pts.push([myLocation.lat, myLocation.lng])
     return pts
-  }, [routeCoordinates, stops, pickupPoint, dropoffPoint, suggestedPoint, passengerPickupPoints, driverLocation])
+  }, [routeCoordinates, stops, pickupPoint, dropoffPoint, suggestedPoint, passengerPickupPoints, driverLocation, myLocation])
 
   const center = useMemo((): [number, number] => {
+    if (myLocation) return [myLocation.lat, myLocation.lng]
     if (routeCoordinates.length > 0) {
       const first = routeCoordinates[0]
       return [first[0], first[1]]
     }
     if (stops.length > 0) return [stops[0].latitude, stops[0].longitude]
     return DEFAULT_CENTER
-  }, [routeCoordinates, stops])
+  }, [myLocation, routeCoordinates, stops])
 
   const handlePickupDragEnd = useCallback(
     (e: L.LeafletEvent) => {
@@ -313,6 +326,14 @@ export function RideMap({
               position={[driverLocation.lat, driverLocation.lng]}
               icon={DRIVER_LOCATION_ICON}
               title="Шофьор"
+            />
+          )}
+
+          {myLocation && (
+            <Marker
+              position={[myLocation.lat, myLocation.lng]}
+              icon={MY_LOCATION_ICON}
+              title="Вашата позиция (GPS)"
             />
           )}
         </MapContainer>

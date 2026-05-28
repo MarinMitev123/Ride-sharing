@@ -5,6 +5,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    /** За тест от телефон в същата Wi‑Fi мрежа (виж docs/ТЕСТ_ОТ_ТЕЛЕФОН.md) */
+    host: true,
   },
   test: {
     globals: true,

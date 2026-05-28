@@ -1,4 +1,6 @@
 spring:
+  config:
+    import: optional:classpath:application-local.yml
   servlet:
     multipart:
       max-file-size: 10MB
@@ -26,10 +28,16 @@ app:
   jwt:
     secret: ${JWT_SECRET:c3ByaW5nLWNhcnBvb2wtand0LXNlY3JldC1rZXktMTIzNDU2}
     expiry-hours: ${JWT_EXPIRY_HOURS:24}
+  # Допълнителни CORS pattern-и (запетая), напр. тунел към Vite – виж docs/ТЕСТ_ПРЕЗ_ТУНЕЛ.md
+  cors:
+    extra-origin-patterns: ${APP_CORS_EXTRA_ORIGIN_PATTERNS:}
   payment:
     stripe:
-      secret-key: ${STRIPE_SECRET_KEY:}
-      webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+      # secret-key и webhook-secret: само в application-local.yml (локално)
+      # или env STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET (не ги задавайте празни в IDE!)
+      currency: ${STRIPE_CURRENCY:eur}
       success-url: ${STRIPE_SUCCESS_URL:http://localhost:5173/payment-success}
       cancel-url: ${STRIPE_CANCEL_URL:http://localhost:5173/payment-cancel}
+      # Точни origin-и на фронтенда през HTTPS тунел (запетая), напр. https://abc.ngrok-free.app
+      extra-frontend-origins: ${STRIPE_EXTRA_FRONTEND_ORIGINS:}
 

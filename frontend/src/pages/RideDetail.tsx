@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getRideById, getRideRoute, validatePoint as apiValidatePoint, validatePoints as apiValidatePoints, bookRide, finishRide, upsertDriverLocation, getDriverLocation as getDriverLocationApi } from '../api/rides'
 import { getDriverRoute } from '../api/route'
@@ -62,6 +62,11 @@ export function RideDetail() {
   const [selectingModePickupDropoff, setSelectingModePickupDropoff] = useState<'pickup' | 'dropoff' | null>(null)
   const [driverRoute, setDriverRoute] = useState<{ coordinates: [number, number][] } | null>(null)
   const [driverRouteLoading, setDriverRouteLoading] = useState(false)
+  const [driverMapMyGps, setDriverMapMyGps] = useState<{ lat: number; lng: number } | null>(null)
+  const [driverMapGpsBusy, setDriverMapGpsBusy] = useState(false)
+  /** GPS на пътника върху картата за избор на качване / следене на шофьор. */
+  const [passengerMapMyGps, setPassengerMapMyGps] = useState<{ lat: number; lng: number } | null>(null)
+  const [passengerMapGpsBusy, setPassengerMapGpsBusy] = useState(false)
   const [driverPickedUpCount, setDriverPickedUpCount] = useState(0)
   const [driverComingToPassengerId, setDriverComingToPassengerId] = useState<number | null>(null)
   const [driverSharingTarget, setDriverSharingTarget] = useState<{ id: number; name: string } | null>(null)
@@ -74,6 +79,8 @@ export function RideDetail() {
   const [, setUnreadByPartner] = useState<Record<number, number>>({})
   const lastKnownMessageByPartnerRef = useRef<Record<number, number>>({})
   const geolocationWatchIdRef = useRef<number | null>(null)
+  /** Отделен watch за синята точка на картата „Маршрут при тръгване“ (не се бърка с „Идвам към теб“). */
+  const driverMapGpsWatchIdRef = useRef<number | null>(null)
   const trackingIntervalRef = useRef<number | null>(null)
   const latestDriverCoordsRef = useRef<{ lat: number; lng: number } | null>(null)
 
@@ -413,6 +420,93 @@ export function RideDetail() {
       .finally(() => setDriverRouteLoading(false))
   }, [isDriver, rideId, token, ride?.id, bookings])
 
+  /** GPS на пътника – карта с маршрут и избор на точки. */
+  useEffect(() => {
+    if (isDriver) {
+      setPassengerMapMyGps(null)
+      return
+    }
+    if (!rideId || Number.isNaN(rideId)) return
+    if (!('geolocation' in navigator)) return
+
+    setPassengerMapMyGps(null)
+    let cancelled = false
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (!cancelled) {
+          setPassengerMapMyGps({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+        }
+      },
+      () => {
+        if (!cancelled) setPassengerMapMyGps(null)
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 }
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [isDriver, rideId])
+
+  /**
+   * GPS на шофьора за картата „Маршрут при тръгване“.
+   * - maximumAge: 0 – без кеширана позиция (иначе често е грешна на PC).
+   * - watchPosition – позицията се уточнява след няколко секунди (GPS/Wi‑Fi).
+   * - Докато е активно „Идвам към теб“, позицията идва от същия watch в handleDriverComingTo (без втори watch).
+   */
+  useEffect(() => {
+    const clearDriverMapGpsWatch = () => {
+      if (driverMapGpsWatchIdRef.current != null) {
+        navigator.geolocation.clearWatch(driverMapGpsWatchIdRef.current)
+        driverMapGpsWatchIdRef.current = null
+      }
+    }
+
+    if (!isDriver) {
+      clearDriverMapGpsWatch()
+      setDriverMapMyGps(null)
+      return
+    }
+    if (!ride || ride.fromLat == null || ride.fromLng == null || ride.toLat == null || ride.toLng == null) {
+      clearDriverMapGpsWatch()
+      return
+    }
+    if (!('geolocation' in navigator)) return
+
+    if (driverSharingTarget != null) {
+      return () => {}
+    }
+
+    const geoOpts: PositionOptions = {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 30000,
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setDriverMapMyGps({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+      },
+      () => {},
+      geoOpts
+    )
+
+    let lastMapGpsUpdate = 0
+    driverMapGpsWatchIdRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        const now = Date.now()
+        if (now - lastMapGpsUpdate < 2000) return
+        lastMapGpsUpdate = now
+        setDriverMapMyGps({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+      },
+      () => {},
+      geoOpts
+    )
+
+    return () => {
+      clearDriverMapGpsWatch()
+    }
+  }, [isDriver, ride?.id, ride?.fromLat, ride?.fromLng, ride?.toLat, ride?.toLng, driverSharingTarget])
+
   const handleSubmitRating = async () => {
     if (!token || ratingToUserId == null) return
     setRatingSubmitting(true)
@@ -507,6 +601,7 @@ export function RideDetail() {
         (position) => {
           const coords = { lat: position.coords.latitude, lng: position.coords.longitude }
           latestDriverCoordsRef.current = coords
+          setDriverMapMyGps(coords)
           void postActiveLocation(coords.lat, coords.lng)
         },
         (geoError) => {
@@ -515,8 +610,8 @@ export function RideDetail() {
         },
         {
           enableHighAccuracy: true,
-          maximumAge: 5000,
-          timeout: 10000,
+          maximumAge: 0,
+          timeout: 20000,
         }
       )
 
@@ -553,6 +648,53 @@ export function RideDetail() {
       addToast('Споделянето на местоположение е спряно.', 'info')
     }
   }
+
+  /** Ръчно презаявяване на GPS за синята точка (на PC първият резултат често е грешен без това). */
+  const refreshDriverMapGps = useCallback(() => {
+    if (!('geolocation' in navigator)) {
+      addToast('Този браузър не поддържа геолокация.', 'error')
+      return
+    }
+    setDriverMapGpsBusy(true)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setDriverMapMyGps({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+        setDriverMapGpsBusy(false)
+        addToast('Позицията на картата е обновена.', 'success')
+      },
+      (err) => {
+        setDriverMapGpsBusy(false)
+        addToast(
+          `Локация: ${err.message}. Разрешете „Местоположение“ за сайта и на Windows: Настройки → Поверителност → Местоположение.`,
+          'error'
+        )
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 }
+    )
+  }, [addToast])
+
+  const refreshPassengerMapGps = useCallback(() => {
+    if (!('geolocation' in navigator)) {
+      addToast('Този браузър не поддържа геолокация.', 'error')
+      return
+    }
+    setPassengerMapGpsBusy(true)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setPassengerMapMyGps({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+        setPassengerMapGpsBusy(false)
+        addToast('Позицията е обновена.', 'success')
+      },
+      (err) => {
+        setPassengerMapGpsBusy(false)
+        addToast(
+          `Локация: ${err.message}. На компютър често е неточна – ползвайте телефон или включете локация за Windows и браузъра.`,
+          'error'
+        )
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 }
+    )
+  }, [addToast])
 
   useEffect(() => {
     if (!token || isDriver || !hasActiveBooking) {
@@ -718,6 +860,7 @@ export function RideDetail() {
           <RideMap
             routeCoordinates={routeData?.coordinates ?? []}
             stops={passengerVisibleStops}
+            myLocation={passengerMapMyGps}
             driverLocation={passengerDriverLocation ? { lat: passengerDriverLocation.latitude, lng: passengerDriverLocation.longitude } : null}
             pickupPoint={pickupDropoffPickup}
             suggestedPoint={
@@ -756,6 +899,27 @@ export function RideDetail() {
             allowPickupSelection={!isDriver && Boolean(canBookThisRide) && !hasActiveBooking}
             height={320}
           />
+          <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            <button
+              type="button"
+              onClick={refreshPassengerMapGps}
+              disabled={passengerMapGpsBusy}
+              style={{
+                padding: '6px 12px',
+                fontSize: 13,
+                background: '#0284c7',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                cursor: passengerMapGpsBusy ? 'wait' : 'pointer',
+              }}
+            >
+              {passengerMapGpsBusy ? 'GPS…' : 'Обнови моята позиция'}
+            </button>
+          </div>
+          <p style={{ marginTop: 8, fontSize: 13, color: '#64748b', lineHeight: 1.45 }}>
+            Синята точка е приблизително къде сте според браузъра (на PC често е неточно). Зелено/червено – старт/край на маршрута; лилаво – шофьор при споделяне.
+          </p>
           {!routeData && (
             <p style={{ position: 'absolute', top: 12, left: 12, margin: 0, padding: '8px 12px', background: 'rgba(255,255,255,0.95)', borderRadius: 8, fontSize: 14, zIndex: 1000, boxShadow: '0 1px 4px rgba(0,0,0,0.1)' }}>
               Маршрутът се зарежда…
@@ -917,7 +1081,7 @@ export function RideDetail() {
                 <RideMap
                   mapKey="driver-route-map"
                   routeCoordinates={driverRouteSliced.coordinates}
-                  stops={driverRouteSliced.stops}
+                  stops={driverRouteSliced.stops.filter((s) => s.type !== 'START' && s.type !== 'END')}
                   passengerPickupPoints={orderedPickups
                     .filter((b) => b.pickupLat != null && b.pickupLng != null)
                     .map((b, idx) => ({
@@ -931,7 +1095,31 @@ export function RideDetail() {
                   allowPickupSelection={false}
                   height={320}
                   driverLocation={null}
+                  myLocation={driverMapMyGps}
                 />
+                <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={refreshDriverMapGps}
+                    disabled={driverMapGpsBusy}
+                    style={{
+                      padding: '8px 14px',
+                      fontSize: 14,
+                      background: '#0284c7',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 8,
+                      cursor: driverMapGpsBusy ? 'wait' : 'pointer',
+                    }}
+                  >
+                    {driverMapGpsBusy ? 'Търсене на GPS…' : 'Обнови моята позиция'}
+                  </button>
+                </div>
+                <p style={{ marginTop: 8, fontSize: 13, color: '#64748b', lineHeight: 1.45 }}>
+                  <strong>Важно:</strong> На компютър „моята позиция“ често идва от Wi‑Fi/IP (без истински GPS) и може да е с грешка от километри до десетки км – това важи и за Google Maps, не само за това приложение.
+                  Синята точка е това, което браузърът докладва; лилавите маркери са качвания на пътници. Синята линия е маршрутът от зададените градове в пътуването.
+                  За реална позиция ползвайте <strong>телефон</strong> (с GPS) или включете <strong>локация за Windows</strong> и разрешение за сайта (HTTPS или localhost).
+                </p>
               </div>
               {driverSharingTarget && (
                 <div style={{ marginBottom: 12, padding: '8px 10px', borderRadius: 8, background: '#ecfeff', border: '1px solid #a5f3fc', color: '#0f766e', fontSize: 14 }}>
@@ -1052,8 +1240,13 @@ export function RideDetail() {
                     const waypoints = stopPoints.join('|')
                     const url = new URL('https://www.google.com/maps/dir/')
                     url.searchParams.set('api', '1')
-                    // Не фиксираме origin, за да започне от текущата локация на шофьора.
-                    // Ако няма достъп до локация, Google ще покаже избор на старт.
+                    // Явен старт = същите координати като синята точка в приложението; иначе Google ползва
+                    // собствена „текуща локация“ и често се разминава с Leaflet/OSM.
+                    if (driverMapMyGps) {
+                      url.searchParams.set('origin', `${driverMapMyGps.lat},${driverMapMyGps.lng}`)
+                    } else if (ride.fromLat != null && ride.fromLng != null) {
+                      url.searchParams.set('origin', `${ride.fromLat},${ride.fromLng}`)
+                    }
                     url.searchParams.set('destination', `${dLat},${dLng}`)
                     url.searchParams.set('travelmode', 'driving')
                     url.searchParams.set('dir_action', 'navigate')

@@ -22,7 +22,6 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -32,8 +31,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
-
-import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 @Service
 @RequiredArgsConstructor
@@ -217,19 +214,26 @@ public class RideService {
         return toDriverLocationDto(saved);
     }
 
+    /**
+     * Липсата на активно споделяне не е грешка (пътникът полинва преди шофьорът да пусне GPS) —
+     * връща празен Optional; контролерът отговаря с 204 No Content.
+     */
     @Transactional(readOnly = true)
-    public DriverLocationDto getDriverLocation(Long rideId, Long userId) {
+    public Optional<DriverLocationDto> getDriverLocation(Long rideId, Long userId) {
         RideEntity ride = rideRepository.findById(rideId)
                 .orElseThrow(() -> new IllegalArgumentException("Ride not found"));
-        DriverLocationEntity active = driverLocationRepository
-                .findFirstByRide_IdAndActiveTrueOrderByUpdatedAtDesc(rideId)
-                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "No active driver location"));
+        Optional<DriverLocationEntity> activeOpt = driverLocationRepository
+                .findFirstByRide_IdAndActiveTrueOrderByUpdatedAtDesc(rideId);
+        if (activeOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        DriverLocationEntity active = activeOpt.get();
         boolean isDriver = ride.getDriver() != null && ride.getDriver().getId().equals(userId);
         boolean isTargetPassenger = active.getTargetPassenger() != null && active.getTargetPassenger().getId().equals(userId);
         if (!isDriver && !isTargetPassenger) {
             throw new AccessDeniedException("You do not have access to this driver location");
         }
-        return toDriverLocationDto(active);
+        return Optional.of(toDriverLocationDto(active));
     }
 
     private DriverLocationDto toDriverLocationDto(DriverLocationEntity entity) {

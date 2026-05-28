@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/v1/rides")
@@ -92,7 +93,8 @@ public class RideController {
         Long userId = userRepository.findByEmail(userDetails.getUsername())
                 .orElseThrow(() -> new IllegalArgumentException("User not found"))
                 .getId();
-        return ResponseEntity.ok(rideService.getDriverLocation(id, userId));
+        Optional<DriverLocationDto> location = rideService.getDriverLocation(id, userId);
+        return location.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @GetMapping("/{id}/route")

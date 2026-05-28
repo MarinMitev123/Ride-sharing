@@ -1,0 +1,20 @@
+# Копирай този файл като application-local.yml (в същата папка).
+# application-local.yml е в .gitignore – ключовете не отиват в git.
+#
+# Stripe: Dashboard → Developers → API keys (Test mode)
+#   secret-key  = Secret key (Reveal) → sk_test_...
+#   webhook-secret = от „stripe listen“ → whsec_... (по избор, за статус „Платено“)
+
+app:
+  # Опционално: тест от телефон с мобилни данни през ngrok – виж docs/ТЕСТ_ПРЕЗ_ТУНЕЛ.md
+  # cors:
+  #   extra-origin-patterns: https://*.ngrok-free.app:[*],https://*.ngrok.io:[*]
+  payment:
+    stripe:
+      secret-key: sk_test_ПОСТАВИ_SECRET_KEY_ТУК
+      # Точен HTTPS origin на Vite тунела (само ако ползваш тунел):
+      # extra-frontend-origins: https://ВАШИЯТ-ngrok-5173.ngrok-free.app
+      # webhook-secret: whsec_ПОСТАВИ_СЛЕД_stripe_listen
+
+# Важно: в application.yml НЕ се задава secret-key с празен default –
+# иначе презаписва този файл. След промяна рестартирай backend.

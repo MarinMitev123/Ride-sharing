@@ -78,10 +78,17 @@ export async function removePassengerByDriver(bookingId: number, token: string):
   })
 }
 
-export async function createCheckoutSession(bookingId: number, token: string): Promise<CreateCheckoutSessionResponse> {
+export async function createCheckoutSession(
+  bookingId: number,
+  token: string,
+  frontendOrigin: string | undefined = typeof window !== 'undefined' ? window.location.origin : undefined
+): Promise<CreateCheckoutSessionResponse> {
   return apiRequest<CreateCheckoutSessionResponse>('/payments/create-checkout-session', {
     method: 'POST',
-    body: JSON.stringify({ bookingId }),
+    body: JSON.stringify({
+      bookingId,
+      ...(frontendOrigin ? { frontendOrigin } : {}),
+    }),
     token,
   })
 }

@@ -145,7 +145,8 @@ export async function getDriverLocation(
       'Content-Type': 'application/json',
     },
   })
-  if (res.status === 404 || res.status === 403) return null
+  // 204 = нормално „още няма споделена позиция“; 403 = няма достъп
+  if (res.status === 204 || res.status === 404 || res.status === 403) return null
   if (!res.ok) {
     const body = await res.text()
     let message = body

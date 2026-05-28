@@ -24,6 +24,19 @@ public class PaymentController {
         Long passengerId = userRepository.findByEmail(userDetails.getUsername())
                 .orElseThrow(() -> new IllegalArgumentException("User not found"))
                 .getId();
-        return ResponseEntity.ok(stripePaymentService.createCheckoutSession(request.bookingId(), passengerId));
+        return ResponseEntity.ok(stripePaymentService.createCheckoutSession(
+                request.bookingId(), passengerId, request.frontendOrigin()));
+    }
+
+    /** След връщане от Stripe Checkout (?session_id=…) – обновява PAID без webhook. */
+    @PostMapping("/confirm-checkout-session")
+    public ResponseEntity<BookingDto> confirmCheckoutSession(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody ConfirmCheckoutSessionRequest request
+    ) {
+        Long passengerId = userRepository.findByEmail(userDetails.getUsername())
+                .orElseThrow(() -> new IllegalArgumentException("User not found"))
+                .getId();
+        return ResponseEntity.ok(stripePaymentService.confirmCheckoutSession(request.sessionId(), passengerId));
     }
 }

@@ -99,7 +99,7 @@ public class BookingController {
     public ResponseEntity<CreateCheckoutSessionResponse> payByCard(@AuthenticationPrincipal UserDetails userDetails,
                                                                     @PathVariable Long id) {
         Long passengerId = currentUserId(userDetails);
-        return ResponseEntity.ok(stripePaymentService.createCheckoutSession(id, passengerId));
+        return ResponseEntity.ok(stripePaymentService.createCheckoutSession(id, passengerId, null));
     }
 
     @PatchMapping("/bookings/{id}/mark-cash-paid")

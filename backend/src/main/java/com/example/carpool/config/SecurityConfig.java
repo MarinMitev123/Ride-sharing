@@ -3,6 +3,7 @@ package com.example.carpool.config;
 import com.example.carpool.security.AuthRateLimitFilter;
 import com.example.carpool.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -20,6 +21,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Configuration
@@ -30,10 +32,31 @@ public class SecurityConfig {
     private final AuthRateLimitFilter authRateLimitFilter;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
+    /** Запетая-разделени Spring CORS patterns, напр. https://*.ngrok-free.app:[*] */
+    @Value("${app.cors.extra-origin-patterns:}")
+    private String extraCorsOriginPatterns;
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("http://localhost:5173", "http://127.0.0.1:5173"));
+        List<String> originPatterns = new ArrayList<>(List.of(
+                "http://localhost:[*]",
+                "http://127.0.0.1:[*]",
+                "http://192.168.*:[*]",
+                "http://10.*:[*]"
+        ));
+        for (int i = 16; i <= 31; i++) {
+            originPatterns.add("http://172." + i + ".*:[*]");
+        }
+        if (extraCorsOriginPatterns != null && !extraCorsOriginPatterns.isBlank()) {
+            for (String p : extraCorsOriginPatterns.split(",")) {
+                String t = p.trim();
+                if (!t.isEmpty()) {
+                    originPatterns.add(t);
+                }
+            }
+        }
+        config.setAllowedOriginPatterns(originPatterns);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
         config.setAllowCredentials(true);
