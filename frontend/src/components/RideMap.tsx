@@ -171,6 +171,8 @@ export interface RideMapProps {
   mapKey?: string
   /** Допълнителни точки за качване на пътници (за изгледа на шофьора) */
   passengerPickupPoints?: { lat: number; lng: number; title?: string }[]
+  /** Точки за слизане на пътници (оранжев маркер) */
+  passengerDropoffPoints?: { lat: number; lng: number; title?: string }[]
   /** Текуща позиция на шофьора при live tracking */
   driverLocation?: { lat: number; lng: number } | null
   /** GPS на текущия потребител – центриране и маркер (напр. „откъде тръгвам“) */
@@ -191,6 +193,7 @@ export function RideMap({
   onDropoffChange,
   mapKey,
   passengerPickupPoints = [],
+  passengerDropoffPoints = [],
   driverLocation = null,
   myLocation = null,
 }: RideMapProps) {
@@ -201,10 +204,11 @@ export function RideMap({
     if (dropoffPoint) pts.push([dropoffPoint.lat, dropoffPoint.lng])
     if (suggestedPoint) pts.push([suggestedPoint.lat, suggestedPoint.lng])
     passengerPickupPoints.forEach((p) => pts.push([p.lat, p.lng]))
+    passengerDropoffPoints.forEach((p) => pts.push([p.lat, p.lng]))
     if (driverLocation) pts.push([driverLocation.lat, driverLocation.lng])
     if (myLocation) pts.push([myLocation.lat, myLocation.lng])
     return pts
-  }, [routeCoordinates, stops, pickupPoint, dropoffPoint, suggestedPoint, passengerPickupPoints, driverLocation, myLocation])
+  }, [routeCoordinates, stops, pickupPoint, dropoffPoint, suggestedPoint, passengerPickupPoints, passengerDropoffPoints, driverLocation, myLocation])
 
   const center = useMemo((): [number, number] => {
     if (myLocation) return [myLocation.lat, myLocation.lng]
@@ -318,6 +322,15 @@ export function RideMap({
               position={[p.lat, p.lng]}
               icon={PASSENGER_PICKUP_ICON}
               title={p.title ?? 'Точка за качване на пътник'}
+            />
+          ))}
+
+          {passengerDropoffPoints.map((p, idx) => (
+            <Marker
+              key={`passenger-dropoff-${idx}-${p.lat}-${p.lng}`}
+              position={[p.lat, p.lng]}
+              icon={DROPOFF_ICON}
+              title={p.title ?? 'Точка за слизане на пътник'}
             />
           ))}
 

@@ -559,6 +559,24 @@ body {
   color: var(--color-primary);
 }
 
+/* Пропуснато поле при валидация на „Създай пътуване“ */
+.create-ride-form label.field-label-invalid {
+  color: #b91c1c;
+}
+.create-ride-form input.field-invalid,
+.create-ride-form select.field-invalid {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+}
+.create-ride-form .date-input-with-calendar.field-invalid-wrap input[type="text"] {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+}
+.create-ride-form .create-ride-time-selects.field-invalid-wrap select {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+}
+
 .page-content h1 {
   margin-top: 0;
   margin-bottom: 8px;

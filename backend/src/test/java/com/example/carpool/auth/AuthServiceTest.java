@@ -29,6 +29,12 @@ class AuthServiceTest {
     private com.example.carpool.security.JwtService jwtService;
     @Mock
     private org.springframework.security.authentication.AuthenticationManager authenticationManager;
+    @Mock
+    private PasswordResetTokenRepository passwordResetTokenRepository;
+    @Mock
+    private com.example.carpool.mail.PasswordResetMailService passwordResetMailService;
+    @Mock
+    private com.example.carpool.config.AppMailProperties appMailProperties;
 
     @InjectMocks
     private AuthService authService;

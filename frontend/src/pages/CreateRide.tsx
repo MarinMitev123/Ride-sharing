@@ -7,6 +7,16 @@ import { CITIES } from '../constants/cities'
 import { parseBgDateTime, apiDateToBg } from '../constants/dateLocale'
 import type { RideCreateRequest } from '../types/api'
 
+type CreateRideField =
+  | 'fromCity'
+  | 'toCity'
+  | 'fromDistrict'
+  | 'toDistrict'
+  | 'departureDate'
+  | 'availableSeats'
+  | 'price'
+  | 'carDetails'
+
 export function CreateRide() {
   const { token } = useAuth()
   const navigate = useNavigate()
@@ -22,7 +32,37 @@ export function CreateRide() {
   const [price, setPrice] = useState('')
   const [carDetails, setCarDetails] = useState('')
   const [error, setError] = useState('')
+  const [invalidFields, setInvalidFields] = useState<Set<CreateRideField>>(() => new Set())
   const [submitting, setSubmitting] = useState(false)
+
+  const clearFieldError = (field: CreateRideField) => {
+    setInvalidFields((prev) => {
+      if (!prev.has(field)) return prev
+      const next = new Set(prev)
+      next.delete(field)
+      if (next.size === 0) {
+        setError((msg) => (msg.includes('червено') ? '' : msg))
+      }
+      return next
+    })
+  }
+
+  const clearRouteErrors = () => {
+    setInvalidFields((prev) => {
+      if (!prev.has('fromCity') && !prev.has('toCity')) return prev
+      const next = new Set(prev)
+      next.delete('fromCity')
+      next.delete('toCity')
+      if (next.size === 0) {
+        setError((msg) => (msg.includes('червено') ? '' : msg))
+      }
+      return next
+    })
+  }
+
+  const isInvalid = (field: CreateRideField) => invalidFields.has(field)
+  const labelClass = (field: CreateRideField) => (isInvalid(field) ? 'field-label-invalid' : undefined)
+  const inputClass = (field: CreateRideField) => (isInvalid(field) ? 'field-invalid' : undefined)
 
   const SOFIA_DISTRICTS = [
     'Център',
@@ -192,39 +232,62 @@ export function CreateRide() {
     return matched ?? results[0]
   }
 
+  function collectInvalidFields(): Set<CreateRideField> {
+    const invalid = new Set<CreateRideField>()
+    if (!fromCity.trim()) invalid.add('fromCity')
+    if (!toCity.trim()) invalid.add('toCity')
+    if (fromCity && toCity && fromCity === toCity && fromCity !== 'София') {
+      invalid.add('fromCity')
+      invalid.add('toCity')
+    }
+    if (fromCity === 'София' && !fromDistrict.trim()) invalid.add('fromDistrict')
+    if (toCity === 'София' && !toDistrict.trim()) invalid.add('toDistrict')
+    if (!departureDate.trim()) {
+      invalid.add('departureDate')
+    } else {
+      const timeString = `${departureHour}:${departureMinute}`
+      if (!parseBgDateTime(departureDate.trim(), timeString)) {
+        invalid.add('departureDate')
+      }
+    }
+    if (!price.trim()) {
+      invalid.add('price')
+    } else {
+      const priceNum = parseFloat(price.replace(',', '.').replace(/[^\d.]/g, ''))
+      if (Number.isNaN(priceNum) || priceNum < 0.01) invalid.add('price')
+    }
+    if (!carDetails.trim()) invalid.add('carDetails')
+    if (!Number.isFinite(availableSeats) || availableSeats < 1) invalid.add('availableSeats')
+    return invalid
+  }
+
+  function validateForm(): { message: string; fields: Set<CreateRideField> } | null {
+    const fields = collectInvalidFields()
+    if (fields.size === 0) return null
+    return {
+      message:
+        fields.size === 1
+          ? 'Попълнете полето, отбелязано в червено.'
+          : 'Попълнете полетата, отбелязани в червено.',
+      fields,
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+    const validation = validateForm()
+    if (validation) {
+      setInvalidFields(validation.fields)
+      setError(validation.message)
+      return
+    }
+    setInvalidFields(new Set())
     setSubmitting(true)
     try {
-      const priceNum = parseFloat(price.replace(',', '.'))
-      if (Number.isNaN(priceNum) || priceNum < 0) {
-        setError('Въведете валидна цена (число ≥ 0).')
-        setSubmitting(false)
-        return
-      }
+      const priceNum = parseFloat(price.replace(',', '.').replace(/[^\d.]/g, ''))
       const timeString = `${departureHour}:${departureMinute}`
-      if (!departureDate.trim() || !timeString.trim()) {
-        setError('Въведете дата (ДД.ММ.ГГГГ) и час на тръгване (ЧЧ:ММ).')
-        setSubmitting(false)
-        return
-      }
-      if (fromCity === 'София' && !fromDistrict.trim()) {
-        setError('При тръгване от София, посочете и квартал или район.')
-        setSubmitting(false)
-        return
-      }
-      if (toCity === 'София' && !toDistrict.trim()) {
-        setError('При пристигане в София, посочете и квартал или район.')
-        setSubmitting(false)
-        return
-      }
-      const departureTimeIso = parseBgDateTime(departureDate.trim(), timeString)
-      if (!departureTimeIso) {
-        setError('Невалидна дата или час. Дата: ДД.ММ.ГГГГ, час: ЧЧ:ММ')
-        setSubmitting(false)
-        return
-      }
+      const departureTimeIso = parseBgDateTime(departureDate.trim(), timeString)!
       let fromLat: number | undefined
       let fromLng: number | undefined
       let toLat: number | undefined
@@ -281,7 +344,7 @@ export function CreateRide() {
         departureTime: departureTimeIso,
         availableSeats,
         price: priceNum,
-        ...(carDetails.trim() && { carDetails: carDetails.trim() }),
+        carDetails: carDetails.trim(),
         ...(fromLat != null && fromLng != null && { fromLat, fromLng }),
         ...(toLat != null && toLng != null && { toLat, toLng }),
       }
@@ -326,6 +389,9 @@ export function CreateRide() {
   return (
     <div className="page-form create-ride-form" style={{ maxWidth: 480 }}>
       <h1>Създай пътуване</h1>
+      <p style={{ margin: '0 0 16px', fontSize: 14, color: '#64748b' }}>
+        Всички полета са задължителни. При София посочете и квартал.
+      </p>
       <form onSubmit={handleSubmit}>
         {error && <div className="form-error">{error}</div>}
 
@@ -334,11 +400,16 @@ export function CreateRide() {
             <span className="create-ride-section-icon" aria-hidden><IconMapPin /></span>
             Маршрут
           </h2>
-          <label>
+          <label className={labelClass('fromCity')}>
             От град
             <select
               value={fromCity}
-              onChange={(e) => setFromCity(e.target.value)}
+              onChange={(e) => {
+                setFromCity(e.target.value)
+                clearRouteErrors()
+                clearFieldError('fromDistrict')
+              }}
+              className={inputClass('fromCity')}
               required
             >
               <option value="">— Избери град —</option>
@@ -348,23 +419,32 @@ export function CreateRide() {
             </select>
           </label>
           {fromCity === 'София' && (
-            <label>
+            <label className={labelClass('fromDistrict')}>
               Квартал в София
               <input
                 type="text"
                 list="sofia-districts"
                 value={fromDistrict}
-                onChange={(e) => setFromDistrict(e.target.value)}
+                onChange={(e) => {
+                  setFromDistrict(e.target.value)
+                  clearFieldError('fromDistrict')
+                }}
+                className={inputClass('fromDistrict')}
                 placeholder="напр. Младост 4, Люлин 7, Драгалевци..."
                 required
               />
             </label>
           )}
-          <label>
+          <label className={labelClass('toCity')}>
             До град
             <select
               value={toCity}
-              onChange={(e) => setToCity(e.target.value)}
+              onChange={(e) => {
+                setToCity(e.target.value)
+                clearRouteErrors()
+                clearFieldError('toDistrict')
+              }}
+              className={inputClass('toCity')}
               required
             >
               <option value="">— Избери град —</option>
@@ -374,13 +454,17 @@ export function CreateRide() {
             </select>
           </label>
           {toCity === 'София' && (
-            <label>
+            <label className={labelClass('toDistrict')}>
               Квартал в София
               <input
                 type="text"
                 list="sofia-districts"
                 value={toDistrict}
-                onChange={(e) => setToDistrict(e.target.value)}
+                onChange={(e) => {
+                  setToDistrict(e.target.value)
+                  clearFieldError('toDistrict')
+                }}
+                className={inputClass('toDistrict')}
                 placeholder="напр. Младост 4, Люлин 7, Драгалевци..."
                 required
               />
@@ -399,13 +483,19 @@ export function CreateRide() {
             Дата и час
           </h2>
           <div className="create-ride-date-time">
-            <label>
+            <label className={labelClass('departureDate')}>
               Дата
-              <span className="date-input-with-calendar">
+              <span
+                className={`date-input-with-calendar${isInvalid('departureDate') ? ' field-invalid-wrap' : ''}`}
+              >
                 <input
                   type="text"
                   value={departureDate}
-                  onChange={(e) => setDepartureDate(e.target.value)}
+                  onChange={(e) => {
+                    setDepartureDate(e.target.value)
+                    clearFieldError('departureDate')
+                  }}
+                  className={inputClass('departureDate')}
                   placeholder="дд.мм.гггг"
                   required
                   maxLength={10}
@@ -418,7 +508,10 @@ export function CreateRide() {
                   className="date-picker-hidden"
                   onChange={(e) => {
                     const v = e.target.value
-                    if (v) setDepartureDate(apiDateToBg(v))
+                    if (v) {
+                      setDepartureDate(apiDateToBg(v))
+                      clearFieldError('departureDate')
+                    }
                   }}
                 />
                 <button
@@ -440,12 +533,17 @@ export function CreateRide() {
                 </button>
               </span>
             </label>
-            <label>
+            <label className={labelClass('departureDate')}>
               Час
-              <div className="create-ride-time-selects">
+              <div
+                className={`create-ride-time-selects${isInvalid('departureDate') ? ' field-invalid-wrap' : ''}`}
+              >
                 <select
                   value={departureHour}
-                  onChange={(e) => setDepartureHour(e.target.value)}
+                  onChange={(e) => {
+                    setDepartureHour(e.target.value)
+                    clearFieldError('departureDate')
+                  }}
                   required
                 >
                   {Array.from({ length: 24 }).map((_, i) => {
@@ -458,7 +556,10 @@ export function CreateRide() {
                 <span>:</span>
                 <select
                   value={departureMinute}
-                  onChange={(e) => setDepartureMinute(e.target.value)}
+                  onChange={(e) => {
+                    setDepartureMinute(e.target.value)
+                    clearFieldError('departureDate')
+                  }}
                   required
                 >
                   {['00', '15', '30', '45'].map((m) => (
@@ -475,7 +576,7 @@ export function CreateRide() {
             <span className="create-ride-section-icon" aria-hidden><IconDetails /></span>
             Детайли
           </h2>
-          <label>
+          <label className={labelClass('availableSeats')}>
             <span className="create-ride-label-with-icon">
               <span className="create-ride-label-icon" aria-hidden><IconPeople /></span>
               Брой места
@@ -484,28 +585,43 @@ export function CreateRide() {
               type="number"
               min={1}
               value={availableSeats}
-              onChange={(e) => setAvailableSeats(parseInt(e.target.value, 10) || 1)}
+              onChange={(e) => {
+                setAvailableSeats(parseInt(e.target.value, 10) || 1)
+                clearFieldError('availableSeats')
+              }}
+              className={inputClass('availableSeats')}
               required
             />
           </label>
-          <label>
+          <label className={labelClass('price')}>
             Цена (€)
             <input
               type="text"
               inputMode="decimal"
               value={price}
-              onChange={(e) => setPrice(e.target.value)}
+              onChange={(e) => {
+                setPrice(e.target.value)
+                clearFieldError('price')
+              }}
+              className={inputClass('price')}
               required
               placeholder="напр. 15 €"
             />
           </label>
-          <label>
+          <label className={labelClass('carDetails')}>
             Автомобил
             <input
               type="text"
               value={carDetails}
-              onChange={(e) => setCarDetails(e.target.value)}
+              onChange={(e) => {
+                setCarDetails(e.target.value)
+                clearFieldError('carDetails')
+              }}
+              className={inputClass('carDetails')}
               placeholder="напр. VW Golf, червен"
+              required
+              minLength={2}
+              maxLength={255}
             />
           </label>
         </section>

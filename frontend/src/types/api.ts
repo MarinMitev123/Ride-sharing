@@ -88,7 +88,7 @@ export interface RideCreateRequest {
   departureTime: string
   availableSeats: number
   price: number
-  carDetails?: string
+  carDetails: string
 }
 
 /** Ride stops and route validation */
@@ -173,6 +173,8 @@ export interface BookingDto {
   passengerNote?: string | null
   pickupStopId?: number | null
   dropoffStopId?: number | null
+  dropoffLat?: number | null
+  dropoffLng?: number | null
   seatsReserved?: number | null
 }
 

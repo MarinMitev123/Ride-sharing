@@ -193,6 +193,16 @@ export function RideDetail() {
       }
       if (dropoffFromRoute) {
         result.push(dropoffFromRoute)
+      } else if (b.dropoffLat != null && b.dropoffLng != null) {
+        result.push({
+          id: -(3000 + i),
+          rideId: ride.id,
+          name: `Слизане ${i + 1}: ${b.passengerName ?? 'Пътник'}`,
+          latitude: b.dropoffLat,
+          longitude: b.dropoffLng,
+          stopOrder: i + 100,
+          type: 'DROPOFF',
+        })
       }
     })
     return result
@@ -407,7 +417,7 @@ export function RideDetail() {
   useEffect(() => {
     if (!rideId || isNaN(rideId) || !token) return
     getRideRoute(rideId, token).then(setRouteData).catch(() => setRouteData(null))
-  }, [rideId, token])
+  }, [rideId, token, bookings.length])
 
   useEffect(() => {
     if (!isDriver || !rideId || isNaN(rideId) || !token || !ride) return
@@ -1033,11 +1043,20 @@ export function RideDetail() {
                   {bookings.filter((b) => b.status === 'PENDING').map((b) => (
                     <li key={b.id} style={{ marginBottom: 12, padding: 12, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8 }}>
                       <span>
-                        {b.passengerName ?? 'Пътник'} – чака одобрение
-                        {' · '}
-                        {b.paymentMethod === 'CARD'
-                          ? (b.paymentStatus === 'PAID' ? 'Платено с карта' : 'Карта')
-                          : 'Кеш'}
+                        <span style={{ display: 'block' }}>
+                          {b.passengerName ?? 'Пътник'} – чака одобрение
+                          {' · '}
+                          {b.paymentMethod === 'CARD'
+                            ? (b.paymentStatus === 'PAID' ? 'Платено с карта' : 'Карта')
+                            : 'Кеш'}
+                        </span>
+                        {(b.pickupLat != null || b.dropoffLat != null) && (
+                          <span style={{ display: 'block', fontSize: 13, color: '#64748b', marginTop: 6 }}>
+                            {b.pickupLat != null && 'Качване: на картата (лилаво)'}
+                            {b.pickupLat != null && b.dropoffLat != null && ' · '}
+                            {b.dropoffLat != null && 'Слизане: на картата (оранжево)'}
+                          </span>
+                        )}
                       </span>
                       <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
                         <button
@@ -1089,6 +1108,13 @@ export function RideDetail() {
                       lng: b.pickupLng as number,
                       title: `Качване ${idx + 1}: ${b.passengerName ?? 'Пътник'}${b.pickupAddress ? ` (${b.pickupAddress})` : ''}`,
                     }))}
+                  passengerDropoffPoints={orderedPickups
+                    .filter((b) => b.dropoffLat != null && b.dropoffLng != null)
+                    .map((b, idx) => ({
+                      lat: b.dropoffLat as number,
+                      lng: b.dropoffLng as number,
+                      title: `Слизане ${idx + 1}: ${b.passengerName ?? 'Пътник'}`,
+                    }))}
                   pickupPoint={null}
                   suggestedPoint={null}
                   onPickupChange={() => {}}
@@ -1117,7 +1143,7 @@ export function RideDetail() {
                 </div>
                 <p style={{ marginTop: 8, fontSize: 13, color: '#64748b', lineHeight: 1.45 }}>
                   <strong>Важно:</strong> На компютър „моята позиция“ често идва от Wi‑Fi/IP (без истински GPS) и може да е с грешка от километри до десетки км – това важи и за Google Maps, не само за това приложение.
-                  Синята точка е това, което браузърът докладва; лилавите маркери са качвания на пътници. Синята линия е маршрутът от зададените градове в пътуването.
+                  Синята точка е вашата GPS позиция. Лилаво – къде пътникът иска да се качи; оранжево – къде иска да слезе. Синята линия е маршрутът на пътуването.
                   За реална позиция ползвайте <strong>телефон</strong> (с GPS) или включете <strong>локация за Windows</strong> и разрешение за сайта (HTTPS или localhost).
                 </p>
               </div>
@@ -1146,11 +1172,24 @@ export function RideDetail() {
                       gap: 8,
                     }}
                   >
-                    <span style={{ fontWeight: i === driverPickedUpCount ? 600 : 400 }}>
+                    <span style={{ fontWeight: i === driverPickedUpCount ? 600 : 400, display: 'block' }}>
                       {i + 1}. {i < driverPickedUpCount ? 'Готово ✓ ' : 'Забраване: '}
                       {b.passengerName ?? 'Пътник'}
-                      {i >= driverPickedUpCount && (b.pickupAddress || b.pickupNeighborhood) && ` – ${b.pickupAddress || b.pickupNeighborhood}`}
-                      {i >= driverPickedUpCount && !b.pickupAddress && !b.pickupNeighborhood && ' – на картата'}
+                      {i >= driverPickedUpCount && (b.pickupAddress || b.pickupNeighborhood) && (
+                        <span style={{ display: 'block', fontSize: 13, fontWeight: 400, color: '#64748b', marginTop: 4 }}>
+                          Качване: {b.pickupAddress || b.pickupNeighborhood}
+                        </span>
+                      )}
+                      {i >= driverPickedUpCount && !b.pickupAddress && !b.pickupNeighborhood && b.pickupLat != null && (
+                        <span style={{ display: 'block', fontSize: 13, fontWeight: 400, color: '#7c3aed', marginTop: 4 }}>
+                          Качване: на картата (лилав маркер)
+                        </span>
+                      )}
+                      {i >= driverPickedUpCount && b.dropoffLat != null && b.dropoffLng != null && (
+                        <span style={{ display: 'block', fontSize: 13, fontWeight: 400, color: '#c2410c', marginTop: 4 }}>
+                          Слизане: на картата (оранжев маркер)
+                        </span>
+                      )}
                     </span>
                     <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       {i >= driverPickedUpCount && (

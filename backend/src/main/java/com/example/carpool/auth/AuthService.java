@@ -1,5 +1,7 @@
 package com.example.carpool.auth;
 
+import com.example.carpool.config.AppMailProperties;
+import com.example.carpool.mail.PasswordResetMailService;
 import com.example.carpool.security.JwtService;
 import com.example.carpool.user.*;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +35,8 @@ public class AuthService {
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
+    private final PasswordResetMailService passwordResetMailService;
+    private final AppMailProperties appMailProperties;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -105,8 +109,9 @@ public class AuthService {
                     .createdAt(LocalDateTime.now())
                     .build();
             passwordResetTokenRepository.save(tokenEntity);
-            String resetLink = "http://localhost:5173/reset-password?token=" + resetToken;
-            log.info("Password reset link: {}", resetLink);
+            String baseUrl = appMailProperties.getFrontend().getBaseUrl().replaceAll("/+$", "");
+            String resetLink = baseUrl + "/reset-password?token=" + resetToken;
+            passwordResetMailService.deliverPasswordResetLink(user.getEmail(), resetLink);
         });
         return new ForgotPasswordResponse(FORGOT_PASSWORD_GENERIC_MESSAGE);
     }

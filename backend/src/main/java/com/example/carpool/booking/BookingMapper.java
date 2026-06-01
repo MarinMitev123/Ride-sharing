@@ -54,6 +54,8 @@ public class BookingMapper {
                 .passengerNote(entity.getPassengerNote())
                 .pickupStopId(entity.getPickupStop() != null ? entity.getPickupStop().getId() : null)
                 .dropoffStopId(entity.getDropoffStop() != null ? entity.getDropoffStop().getId() : null)
+                .dropoffLat(entity.getDropoffStop() != null ? entity.getDropoffStop().getLatitude() : null)
+                .dropoffLng(entity.getDropoffStop() != null ? entity.getDropoffStop().getLongitude() : null)
                 .seatsReserved(entity.getSeatsReserved())
                 .build();
     }

@@ -5,6 +5,21 @@
 #   secret-key  = Secret key (Reveal) → sk_test_...
 #   webhook-secret = от „stripe listen“ → whsec_... (по избор, за статус „Платено“)
 
+# Забравена парола – реален имейл (Gmail пример; парола = App Password, не обикновената)
+# app:
+#   mail:
+#     enabled: true
+#     from: "Carpool <your.email@gmail.com>"
+# spring:
+#   mail:
+#     host: smtp.gmail.com
+#     port: 587
+#     username: your.email@gmail.com
+#     password: xxxx-xxxx-xxxx-xxxx
+#     properties:
+#       mail.smtp.auth: true
+#       mail.smtp.starttls.enable: true
+
 app:
   # Опционално: тест от телефон с мобилни данни през ngrok – виж docs/ТЕСТ_ПРЕЗ_ТУНЕЛ.md
   # cors:

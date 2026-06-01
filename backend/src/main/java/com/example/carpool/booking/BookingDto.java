@@ -26,5 +26,7 @@ public class BookingDto {
     String passengerNote;
     Long pickupStopId;
     Long dropoffStopId;
+    Double dropoffLat;
+    Double dropoffLng;
     Integer seatsReserved;
 }

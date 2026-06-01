@@ -25,6 +25,13 @@ server:
 
 # JWT – за production задайте JWT_SECRET и JWT_EXPIRY_HOURS чрез env
 app:
+  frontend:
+    base-url: ${APP_FRONTEND_BASE_URL:http://localhost:5173}
+  mail:
+    enabled: ${APP_MAIL_ENABLED:false}
+    from: ${APP_MAIL_FROM:Carpool <noreply@carpool.local>}
+    # test@example.com и подобни → линк само в конзолата на backend
+    console-only-domains: ${APP_MAIL_CONSOLE_ONLY_DOMAINS:example.com,test.com,localhost,invalid,test}
   jwt:
     secret: ${JWT_SECRET:c3ByaW5nLWNhcnBvb2wtand0LXNlY3JldC1rZXktMTIzNDU2}
     expiry-hours: ${JWT_EXPIRY_HOURS:24}

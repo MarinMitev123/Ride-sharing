@@ -133,20 +133,45 @@ docker-compose up --build
 
 **Тестове:** Backend – `mvn test`. Frontend – `npm run test` (изисква Node 18+ за Vitest).
 
-## Forgot Password локален тест
+## Забравена парола (два режима)
+
+| Имейл | Поведение |
+|--------|-----------|
+| `test@example.com`, `*@test.com`, `*@localhost` и др. | Линк **само в конзолата** на backend (удобно за демо) |
+| Реален имейл (Gmail, abv.bg, …) | Линк **по имейл**, ако е включен SMTP (виж по-долу) |
+
+### Тестов акаунт (конзола)
 
 1. Стартирайте backend и frontend.
-2. Отворете login страницата.
-3. Натиснете „Забравена парола?“
-4. Въведете тестов email.
-5. Ако email съществува, backend ще изпише reset link в конзолата.
-6. Копирайте линка: `http://localhost:5173/reset-password?token=...`
-7. Въведете нова парола.
-8. Влезте с новата парола.
+2. „Забравена парола?“ → въведете `test@example.com` (или друг тестов акаунт).
+3. В конзолата на backend: `Password reset (console only, test domain): ...`
+4. Копирайте линка и отворете `/reset-password?token=...`
 
-Важно:
-- В реална production среда линкът се изпраща по email.
-- В този дипломен проект за development/demo reset link-ът се показва в backend конзолата, защото се използват тестови/измислени email адреси.
+### Личен имейл (Gmail пример)
+
+В `application-local.yml` (копирай от `application-local.yml.example`):
+
+```yaml
+app:
+  mail:
+    enabled: true
+    from: "Carpool <your.email@gmail.com>"
+spring:
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: your.email@gmail.com
+    password: вашият-app-password-16-символа
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+```
+
+1. Регистрирайте се с **вашия** Gmail.
+2. „Забравена парола?“ → същият имейл → проверете **входяща поща** (и Spam).
+3. При грешка в SMTP линкът се логва в конзолата като fallback.
+
+Gmail: [App Password](https://support.google.com/accounts/answer/185833) (2FA трябва да е включена).
 
 ## Структура на проекта
 
