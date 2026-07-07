@@ -153,7 +153,7 @@ public class StripePaymentService {
                     .createdAt(LocalDateTime.now())
                     .build();
             paymentRepository.save(payment);
-            return new CreateCheckoutSessionResponse(session.getId());
+            return new CreateCheckoutSessionResponse(session.getId(), session.getUrl());
         } catch (StripeException e) {
             log.warn("Stripe checkout failed for booking {}: {}", bookingId, e.getMessage());
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Stripe error: " + e.getMessage());

@@ -11,12 +11,14 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.mockito.ArgumentCaptor;
 
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
@@ -74,5 +76,20 @@ class AuthServiceTest {
         authService.register(request);
 
         verify(userRepository).save(any(UserEntity.class));
+    }
+
+    @Test
+    void register_ignoresAdminRoleFromPublicRegistration() {
+        RegisterRequest request = new RegisterRequest(
+                "hacker@example.com", "password1", "Hacker", null, UserRole.ROLE_ADMIN);
+        when(userRepository.findByEmail("hacker@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(UserEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(jwtService.generateToken(any())).thenReturn("jwt-token");
+
+        authService.register(request);
+
+        ArgumentCaptor<UserEntity> captor = ArgumentCaptor.forClass(UserEntity.class);
+        verify(userRepository).save(captor.capture());
+        assertThat(captor.getValue().getRole()).isEqualTo(UserRole.ROLE_PASSENGER);
     }
 }

@@ -41,7 +41,7 @@ export interface AuthResponse {
 
 /** User */
 export type UserRole = 'ROLE_DRIVER' | 'ROLE_PASSENGER' | 'ROLE_ADMIN'
-export type UserStatus = 'ACTIVE' | 'INACTIVE' | 'BANNED'
+export type UserStatus = 'ACTIVE' | 'BLOCKED'
 
 export interface UserDto {
   id: number
@@ -74,6 +74,8 @@ export interface RideDto {
   price: number
   carDetails: string | null
   status: RideStatus
+  driverName?: string | null
+  driverRatingAverage?: number | null
 }
 
 export interface RideCreateRequest {
@@ -180,9 +182,15 @@ export interface BookingDto {
 
 export interface CreateCheckoutSessionResponse {
   sessionId: string
+  url: string
 }
 
-export type NotificationType = 'BOOKING_REQUEST' | 'BOOKING_APPROVED' | 'BOOKING_REJECTED' | 'PAYMENT_REQUIRED'
+export type NotificationType =
+  | 'BOOKING_REQUEST'
+  | 'BOOKING_APPROVED'
+  | 'BOOKING_REJECTED'
+  | 'PAYMENT_REQUIRED'
+  | 'USER_REPORT'
 
 export interface NotificationDto {
   id: number
@@ -206,6 +214,7 @@ export interface PickupPoint {
 export interface ConversationDto {
   id: number
   createdAt: string
+  unreadCount: number
   otherUser: {
     id: number
     firstName?: string | null
@@ -233,6 +242,10 @@ export interface MessageCreateRequest {
   content: string
 }
 
+export interface UnreadMessagesTotalDto {
+  total: number
+}
+
 /** Ratings */
 export interface RatingDto {
   id: number
@@ -256,6 +269,42 @@ export interface RatingCreateRequest {
 export interface AdminStatsDto {
   usersCount: number
   ridesCount: number
+  pendingReportsCount: number
+}
+
+export type ReportReason =
+  | 'HARASSMENT'
+  | 'NO_SHOW'
+  | 'UNSAFE_DRIVING'
+  | 'FRAUD'
+  | 'OTHER'
+
+export type ReportStatus = 'PENDING' | 'REVIEWED' | 'DISMISSED'
+
+export interface UserReportDto {
+  id: number
+  reporterId: number
+  reporterName: string
+  reporterEmail: string
+  reportedUserId: number
+  reportedUserName: string
+  reportedUserEmail: string
+  rideId: number
+  rideFromCity: string
+  rideToCity: string
+  reason: ReportReason
+  justification: string
+  status: ReportStatus
+  adminNote: string | null
+  createdAt: string
+  reviewedAt: string | null
+}
+
+export interface CreateReportRequest {
+  reportedUserId: number
+  rideId: number
+  reason: ReportReason
+  justification: string
 }
 
 /** Rides paginated */

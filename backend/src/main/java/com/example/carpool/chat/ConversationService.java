@@ -49,10 +49,19 @@ public class ConversationService {
     }
 
     @Transactional(readOnly = true)
+    public long getUnreadTotal(Long currentUserId) {
+        return conversationRepository.findByDriver_IdOrPassenger_IdOrderByCreatedAtDesc(currentUserId, currentUserId)
+                .stream()
+                .mapToLong(c -> countUnread(c, currentUserId))
+                .sum();
+    }
+
+    @Transactional
     public List<MessageDto> getMessages(Long conversationId, Long currentUserId) {
         ConversationEntity conversation = getOwnedConversation(conversationId, currentUserId);
-        return messageRepository.findByConversation_IdOrderByCreatedAtAsc(conversation.getId())
-                .stream()
+        List<MessageEntity> messages = messageRepository.findByConversation_IdOrderByCreatedAtAsc(conversation.getId());
+        markConversationAsRead(conversation, currentUserId, messages);
+        return messages.stream()
                 .map(this::toMessageDto)
                 .collect(Collectors.toList());
     }
@@ -95,6 +104,7 @@ public class ConversationService {
         return ConversationDto.builder()
                 .id(conversation.getId())
                 .createdAt(conversation.getCreatedAt())
+                .unreadCount(countUnread(conversation, currentUserId))
                 .otherUser(ConversationDto.OtherUserDto.builder()
                         .id(other.getId())
                         .firstName(firstName)
@@ -119,5 +129,42 @@ public class ConversationService {
                 .content(m.getContent())
                 .createdAt(m.getCreatedAt())
                 .build();
+    }
+
+    private long countUnread(ConversationEntity conversation, Long currentUserId) {
+        LocalDateTime lastReadAt = getLastReadAt(conversation, currentUserId);
+        if (lastReadAt == null) {
+            return messageRepository.countByConversation_IdAndSender_IdNot(conversation.getId(), currentUserId);
+        }
+        return messageRepository.countByConversation_IdAndSender_IdNotAndCreatedAtAfter(
+                conversation.getId(), currentUserId, lastReadAt);
+    }
+
+    private LocalDateTime getLastReadAt(ConversationEntity conversation, Long currentUserId) {
+        if (conversation.getDriver().getId().equals(currentUserId)) {
+            return conversation.getDriverLastReadAt();
+        }
+        if (conversation.getPassenger().getId().equals(currentUserId)) {
+            return conversation.getPassengerLastReadAt();
+        }
+        throw new IllegalArgumentException("You do not have access to this conversation");
+    }
+
+    private void markConversationAsRead(
+            ConversationEntity conversation,
+            Long currentUserId,
+            List<MessageEntity> messages
+    ) {
+        LocalDateTime readAt = messages.isEmpty()
+                ? LocalDateTime.now()
+                : messages.get(messages.size() - 1).getCreatedAt();
+        if (conversation.getDriver().getId().equals(currentUserId)) {
+            conversation.setDriverLastReadAt(readAt);
+        } else if (conversation.getPassenger().getId().equals(currentUserId)) {
+            conversation.setPassengerLastReadAt(readAt);
+        } else {
+            throw new IllegalArgumentException("You do not have access to this conversation");
+        }
+        conversationRepository.save(conversation);
     }
 }

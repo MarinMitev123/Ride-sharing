@@ -100,11 +100,6 @@ export function RideBookingPanel({
           Карта (без IBAN)
         </label>
       </div>
-      {cardDisabled && (
-        <p style={{ margin: '4px 0 0', fontSize: 12, color: '#b45309' }}>
-          Картово плащане е изключено за тази обява, защото шофьорът няма въведен IBAN.
-        </p>
-      )}
       {paymentMethod === 'CARD' && (
         <p style={{ margin: '4px 0 0', fontSize: 12, color: '#64748b' }}>
           Ще се отвори защитена страница за плащане с карта. Не се изисква IBAN.

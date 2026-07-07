@@ -4,6 +4,7 @@ import { getRidesFiltered } from '../api/rides'
 import { useAuth } from '../contexts/AuthContext'
 import { CITIES } from '../constants/cities'
 import { localDateToYYYYMMDD } from '../constants/dateLocale'
+import { DriverRatingBadge } from '../components/DriverRatingBadge'
 import type { RideDto } from '../types/api'
 
 const FAVORITES_KEY = 'carpool_favorites'
@@ -304,7 +305,13 @@ export function RidesList() {
                 </span>
                 <span className="meta">
                   {formatDateTime(ride.departureTime)} · {ride.availableSeats} места · {ride.price} €
+                  {ride.driverRatingAverage != null && (
+                    <> · <DriverRatingBadge rating={Number(ride.driverRatingAverage)} size={13} /></>
+                  )}
                 </span>
+                {ride.driverName && (
+                  <span className="car">Шофьор: {ride.driverName}</span>
+                )}
                 {ride.carDetails && <span className="car">{ride.carDetails}</span>}
               </Link>
             </li>

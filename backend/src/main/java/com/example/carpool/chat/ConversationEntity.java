@@ -39,4 +39,10 @@ public class ConversationEntity {
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "driver_last_read_at")
+    private LocalDateTime driverLastReadAt;
+
+    @Column(name = "passenger_last_read_at")
+    private LocalDateTime passengerLastReadAt;
 }

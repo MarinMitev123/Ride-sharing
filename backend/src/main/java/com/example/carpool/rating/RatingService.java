@@ -10,6 +10,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -51,7 +53,18 @@ public class RatingService {
                 .comment(comment)
                 .build();
         RatingEntity saved = ratingRepository.save(rating);
+        refreshUserRatingAverage(toUserId);
         return RatingMapper.toDto(saved);
+    }
+
+    private void refreshUserRatingAverage(Long toUserId) {
+        BigDecimal average = ratingRepository.averageScoreByToUserId(toUserId)
+                .map(avg -> BigDecimal.valueOf(avg).setScale(1, RoundingMode.HALF_UP))
+                .orElse(null);
+        UserEntity ratedUser = userRepository.findById(toUserId)
+                .orElseThrow(() -> new IllegalArgumentException("User to rate not found"));
+        ratedUser.setRatingAverage(average);
+        userRepository.save(ratedUser);
     }
 
     @Transactional(readOnly = true)

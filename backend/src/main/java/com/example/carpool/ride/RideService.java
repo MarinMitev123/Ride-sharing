@@ -275,6 +275,8 @@ public class RideService {
         return RideDto.builder()
                 .id(dto.getId())
                 .driverId(dto.getDriverId())
+                .driverName(dto.getDriverName())
+                .driverRatingAverage(dto.getDriverRatingAverage())
                 .fromCity(dto.getFromCity())
                 .fromDistrict(dto.getFromDistrict())
                 .toCity(dto.getToCity())

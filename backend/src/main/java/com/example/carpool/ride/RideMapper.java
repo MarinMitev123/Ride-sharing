@@ -12,12 +12,17 @@ public class RideMapper {
             return null;
         }
         Long driverId = entity.getDriver() != null ? entity.getDriver().getId() : null;
-        boolean cardPaymentAvailable = entity.getDriver() != null
-                && entity.getDriver().getIban() != null
-                && !entity.getDriver().getIban().isBlank();
+        String driverName = entity.getDriver() != null ? entity.getDriver().getName() : null;
+        java.math.BigDecimal driverRatingAverage = entity.getDriver() != null
+                ? entity.getDriver().getRatingAverage()
+                : null;
+        // Stripe Checkout не изисква IBAN на шофьора – картово плащане е налично за всяко пътуване.
+        boolean cardPaymentAvailable = entity.getDriver() != null;
         return RideDto.builder()
                 .id(entity.getId())
                 .driverId(driverId)
+                .driverName(driverName)
+                .driverRatingAverage(driverRatingAverage)
                 .fromCity(entity.getFromCity())
                 .fromDistrict(entity.getFromDistrict())
                 .toCity(entity.getToCity())

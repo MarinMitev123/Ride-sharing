@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 public class ConversationDto {
     Long id;
     LocalDateTime createdAt;
+    long unreadCount;
     OtherUserDto otherUser;
     RideSummaryDto ride;
 

@@ -5,6 +5,7 @@ import { searchAddress } from '../api/geocoding'
 import { useAuth } from '../contexts/AuthContext'
 import { CITIES } from '../constants/cities'
 import { parseBgDateTime, apiDateToBg } from '../constants/dateLocale'
+import { DriverRatingBadge } from '../components/DriverRatingBadge'
 import type { RideCreateRequest } from '../types/api'
 
 type CreateRideField =
@@ -18,7 +19,7 @@ type CreateRideField =
   | 'carDetails'
 
 export function CreateRide() {
-  const { token } = useAuth()
+  const { token, user } = useAuth()
   const navigate = useNavigate()
   const [fromCity, setFromCity] = useState('')
   const [toCity, setToCity] = useState('')
@@ -389,6 +390,12 @@ export function CreateRide() {
   return (
     <div className="page-form create-ride-form" style={{ maxWidth: 480 }}>
       <h1>Създай пътуване</h1>
+      {user?.ratingAverage != null && (
+        <p style={{ margin: '0 0 12px', fontSize: 14, color: '#475569', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          Вашата оценка като шофьор:
+          <DriverRatingBadge rating={Number(user.ratingAverage)} size={16} />
+        </p>
+      )}
       <p style={{ margin: '0 0 16px', fontSize: 14, color: '#64748b' }}>
         Всички полета са задължителни. При София посочете и квартал.
       </p>

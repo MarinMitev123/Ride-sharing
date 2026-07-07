@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { loadStripe } from '@stripe/stripe-js'
 import { createCheckoutSession, getMyBookings } from '../api/bookings'
 import { getConversations } from '../api/chat'
 import { useAuth } from '../contexts/AuthContext'
@@ -27,7 +26,6 @@ export function MyBookings() {
   const [error, setError] = useState('')
   const [payingBookingId, setPayingBookingId] = useState<number | null>(null)
   const [openingChatBookingId, setOpeningChatBookingId] = useState<number | null>(null)
-  const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
 
   const loadBookings = () => {
     if (!token) return Promise.resolve()
@@ -56,21 +54,13 @@ export function MyBookings() {
 
   const handlePayCard = async (bookingId: number) => {
     if (!token) return
-    if (!stripePublishableKey) {
-      addToast('Липсва VITE_STRIPE_PUBLISHABLE_KEY във frontend конфигурацията.', 'error')
-      return
-    }
     setPayingBookingId(bookingId)
     try {
-      const { sessionId } = await createCheckoutSession(bookingId, token)
-      if (!sessionId) throw new Error('Липсва Stripe sessionId')
-      const stripe = await loadStripe(stripePublishableKey)
-      if (!stripe) throw new Error('Stripe.js не можа да се инициализира')
-      const result = await stripe.redirectToCheckout({ sessionId })
-      if (result.error?.message) throw new Error(result.error.message)
+      const { url } = await createCheckoutSession(bookingId, token)
+      if (!url) throw new Error('Липсва Stripe checkout URL')
+      window.location.assign(url)
     } catch (err) {
       addToast(err instanceof Error ? err.message : 'Грешка при плащане', 'error')
-    } finally {
       setPayingBookingId(null)
     }
   }

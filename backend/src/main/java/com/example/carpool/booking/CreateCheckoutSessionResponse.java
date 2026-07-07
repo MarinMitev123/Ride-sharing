@@ -1,4 +1,4 @@
 package com.example.carpool.booking;
 
-public record CreateCheckoutSessionResponse(String sessionId) {
+public record CreateCheckoutSessionResponse(String sessionId, String url) {
 }

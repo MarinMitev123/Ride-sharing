@@ -25,5 +25,7 @@ public class RideDto {
     BigDecimal price;
     String carDetails;
     RideStatus status;
+    String driverName;
+    BigDecimal driverRatingAverage;
 }
 

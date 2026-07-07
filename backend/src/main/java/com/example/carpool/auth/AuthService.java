@@ -44,7 +44,7 @@ public class AuthService {
             throw new IllegalArgumentException("Email is already in use");
         }
 
-        UserRole role = request.role() != null ? request.role() : UserRole.ROLE_PASSENGER;
+        UserRole role = resolveRegistrationRole(request.role());
 
         UserEntity user = UserEntity.builder()
                 .email(request.email())
@@ -65,6 +65,17 @@ public class AuthService {
 
         String token = jwtService.generateToken(springUser);
         return new AuthResponse(token, UserMapper.toDto(saved));
+    }
+
+    /**
+     * Публичната регистрация не може да създава администратори — само пътник или шофьор.
+     * Админ се създава при seed при стартиране или ръчно в базата.
+     */
+    private static UserRole resolveRegistrationRole(UserRole requested) {
+        if (requested == null || requested == UserRole.ROLE_ADMIN) {
+            return UserRole.ROLE_PASSENGER;
+        }
+        return requested;
     }
 
     @Transactional(readOnly = true)

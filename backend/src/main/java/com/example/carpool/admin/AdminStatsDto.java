@@ -6,4 +6,5 @@ import lombok.Value;
 public class AdminStatsDto {
     long usersCount;
     long ridesCount;
+    long pendingReportsCount;
 }

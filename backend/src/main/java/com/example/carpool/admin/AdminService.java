@@ -1,5 +1,9 @@
 package com.example.carpool.admin;
 
+import com.example.carpool.report.ReportService;
+import com.example.carpool.report.ReportStatus;
+import com.example.carpool.report.UpdateReportRequest;
+import com.example.carpool.report.UserReportDto;
 import com.example.carpool.user.UserEntity;
 import com.example.carpool.user.UserRepository;
 import com.example.carpool.user.UserStatus;
@@ -19,6 +23,7 @@ public class AdminService {
 
     private final UserRepository userRepository;
     private final RideRepository rideRepository;
+    private final ReportService reportService;
 
     @Transactional(readOnly = true)
     public List<UserDto> getAllUsers() {
@@ -50,6 +55,22 @@ public class AdminService {
     public AdminStatsDto getStats() {
         long usersCount = userRepository.count();
         long ridesCount = rideRepository.count();
-        return new AdminStatsDto(usersCount, ridesCount);
+        long pendingReportsCount = reportService.countPendingReports();
+        return new AdminStatsDto(usersCount, ridesCount, pendingReportsCount);
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserReportDto> getReports(ReportStatus status) {
+        return reportService.getAllReports(status);
+    }
+
+    @Transactional
+    public UserReportDto updateReport(Long reportId, UpdateReportRequest request) {
+        return reportService.updateReport(reportId, request);
+    }
+
+    @Transactional
+    public UserReportDto blockUserFromReport(Long reportId) {
+        return reportService.blockReportedUser(reportId);
     }
 }

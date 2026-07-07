@@ -1,6 +1,10 @@
 package com.example.carpool.admin;
 
+import com.example.carpool.report.ReportStatus;
+import com.example.carpool.report.UpdateReportRequest;
+import com.example.carpool.report.UserReportDto;
 import com.example.carpool.user.UserDto;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -34,5 +38,22 @@ public class AdminController {
     @GetMapping("/stats")
     public ResponseEntity<AdminStatsDto> getStats() {
         return ResponseEntity.ok(adminService.getStats());
+    }
+
+    @GetMapping("/reports")
+    public ResponseEntity<List<UserReportDto>> getReports(
+            @RequestParam(required = false) ReportStatus status) {
+        return ResponseEntity.ok(adminService.getReports(status));
+    }
+
+    @PatchMapping("/reports/{id}")
+    public ResponseEntity<UserReportDto> updateReport(@PathVariable Long id,
+                                                    @Valid @RequestBody UpdateReportRequest request) {
+        return ResponseEntity.ok(adminService.updateReport(id, request));
+    }
+
+    @PostMapping("/reports/{id}/block-user")
+    public ResponseEntity<UserReportDto> blockUserFromReport(@PathVariable Long id) {
+        return ResponseEntity.ok(adminService.blockUserFromReport(id));
     }
 }

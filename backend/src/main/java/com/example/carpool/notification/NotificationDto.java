@@ -1,5 +1,6 @@
 package com.example.carpool.notification;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Builder;
 import lombok.Value;
 
@@ -15,6 +16,7 @@ public class NotificationDto {
     String message;
     Long bookingId;
     Long rideId;
+    @JsonProperty("isRead")
     boolean isRead;
     LocalDateTime createdAt;
 }

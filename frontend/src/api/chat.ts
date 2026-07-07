@@ -1,9 +1,14 @@
 import { apiRequest } from './client'
-import type { ConversationDto, MessageCreateRequest, MessageDto } from '../types/api'
+import type { ConversationDto, MessageCreateRequest, MessageDto, UnreadMessagesTotalDto } from '../types/api'
 
 export async function getConversations(token: string): Promise<ConversationDto[]> {
   const data = await apiRequest<ConversationDto[]>('/conversations', { token })
   return Array.isArray(data) ? data : []
+}
+
+export async function getUnreadMessagesTotal(token: string): Promise<number> {
+  const data = await apiRequest<UnreadMessagesTotalDto>('/conversations/unread-total', { token })
+  return typeof data?.total === 'number' ? data.total : 0
 }
 
 export async function getConversationMessages(

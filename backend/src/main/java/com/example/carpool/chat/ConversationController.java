@@ -24,6 +24,12 @@ public class ConversationController {
         return ResponseEntity.ok(conversationService.getConversations(currentUserId));
     }
 
+    @GetMapping("/unread-total")
+    public ResponseEntity<UnreadTotalDto> getUnreadTotal(@AuthenticationPrincipal UserDetails userDetails) {
+        Long currentUserId = currentUserId(userDetails);
+        return ResponseEntity.ok(new UnreadTotalDto(conversationService.getUnreadTotal(currentUserId)));
+    }
+
     @GetMapping("/{id}/messages")
     public ResponseEntity<List<MessageDto>> getMessages(@AuthenticationPrincipal UserDetails userDetails,
                                                         @PathVariable Long id) {

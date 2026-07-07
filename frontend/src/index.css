@@ -993,6 +993,29 @@ body {
 .notifications-nav {
   position: relative;
 }
+.messages-nav-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-header-muted);
+  text-decoration: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition), background var(--transition), transform 0.15s ease;
+}
+.messages-nav-link:hover {
+  color: var(--color-header-text);
+  background: rgba(255, 255, 255, 0.15);
+}
+.messages-nav-link--has-unread {
+  padding-right: 28px;
+}
+.messages-nav-link .notifications-badge {
+  top: 2px;
+  right: 2px;
+}
 .notifications-bell-btn {
   position: relative;
   border: none;

@@ -11,13 +11,16 @@ import {
 } from '../api/bookings'
 import { getConversation, sendMessage } from '../api/chat'
 import { createRating } from '../api/ratings'
+import { createReport, getMyReports } from '../api/reports'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import { RideMap } from '../components/RideMap'
 import { PickupDropoffSelector } from '../components/PickupDropoffSelector'
 import { RideBookingPanel } from '../components/RideBookingPanel'
 import { StarRating } from '../components/StarRating'
-import type { RideDto, BookingDto, MessageDto, ValidatePointsResponse, ValidatePointResponse, RideStopDto, DriverLocationDto } from '../types/api'
+import { DriverRatingBadge } from '../components/DriverRatingBadge'
+import { ReportUserModal } from '../components/ReportUserModal'
+import type { RideDto, BookingDto, MessageDto, ValidatePointsResponse, ValidatePointResponse, RideStopDto, DriverLocationDto, UserReportDto, ReportReason } from '../types/api'
 
 function formatDateTime(iso: string) {
   const d = new Date(iso)
@@ -72,6 +75,8 @@ export function RideDetail() {
   const [driverSharingTarget, setDriverSharingTarget] = useState<{ id: number; name: string } | null>(null)
   const [passengerDriverLocation, setPassengerDriverLocation] = useState<DriverLocationDto | null>(null)
   const [finishingRide, setFinishingRide] = useState(false)
+  const [myReports, setMyReports] = useState<UserReportDto[]>([])
+  const [reportTarget, setReportTarget] = useState<{ id: number; name: string } | null>(null)
   const chatScrollRef = useRef<HTMLDivElement | null>(null)
   const knownPendingBookingIdsRef = useRef<Set<number>>(new Set())
   const knownIncomingMessageIdRef = useRef<number | null>(null)
@@ -90,6 +95,16 @@ export function RideDetail() {
   const canBookThisRide = !isDriver && ride?.status === 'OPEN' && ride.availableSeats > 0
   const canChat = token && user && ride && (isDriver || hasActiveBooking)
   const canRate = ride?.status === 'FINISHED' && token && user && (isDriver || myBooking)
+  const reportableUsers = useMemo(() => {
+    if (!token || !user || !ride || isDriver) return []
+    if (myBooking?.status !== 'APPROVED') return []
+    if (Number(ride.driverId) === Number(user.id)) return []
+    return [{ id: ride.driverId, name: ride.driverName ?? 'Шофьор' }]
+  }, [token, user, ride, isDriver, myBooking])
+  const reportedUserIds = useMemo(
+    () => new Set(myReports.map((r) => r.reportedUserId)),
+    [myReports]
+  )
   const activeTrackingPassengerId = driverSharingTarget?.id ?? null
   const locationUpdatedAgoSec = passengerDriverLocation
     ? Math.max(0, Math.floor((Date.now() - new Date(passengerDriverLocation.updatedAt).getTime()) / 1000))
@@ -420,6 +435,16 @@ export function RideDetail() {
   }, [rideId, token, bookings.length])
 
   useEffect(() => {
+    if (!rideId || isNaN(rideId) || !token) {
+      setMyReports([])
+      return
+    }
+    getMyReports(token, rideId)
+      .then(setMyReports)
+      .catch(() => setMyReports([]))
+  }, [rideId, token, bookings.length, myBooking?.status])
+
+  useEffect(() => {
     if (!isDriver || !rideId || isNaN(rideId) || !token || !ride) return
     const hasCoords = ride.fromLat != null && ride.fromLng != null && ride.toLat != null && ride.toLng != null
     if (!hasCoords) return
@@ -534,6 +559,21 @@ export function RideDetail() {
     } finally {
       setRatingSubmitting(false)
     }
+  }
+
+  const handleSubmitReport = async (reason: ReportReason, justification: string) => {
+    if (!token || !reportTarget || !rideId || isNaN(rideId)) return
+    const created = await createReport(
+      {
+        reportedUserId: reportTarget.id,
+        rideId,
+        reason,
+        justification,
+      },
+      token
+    )
+    setMyReports((prev) => [created, ...prev])
+    addToast('Докладът е изпратен. Администратор ще го прегледа.', 'success')
   }
 
   const handleCancel = async () => {
@@ -841,6 +881,16 @@ export function RideDetail() {
         {formatDateTime(ride.departureTime)} · {ride.availableSeats} места · {ride.price} €
         {ride.carDetails && <> · {ride.carDetails}</>}
       </div>
+      {ride.driverName && (
+        <p style={{ marginTop: 8, color: '#475569', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span>Шофьор: <strong>{ride.driverName}</strong></span>
+          {ride.driverRatingAverage != null ? (
+            <DriverRatingBadge rating={Number(ride.driverRatingAverage)} size={16} />
+          ) : (
+            <span style={{ color: '#94a3b8' }}>Все още няма оценки</span>
+          )}
+        </p>
+      )}
       {!isDriver && myBooking && (
         <p style={{ marginTop: 8, color: '#475569', fontSize: 14 }}>
           Плащане:{' '}
@@ -1371,6 +1421,55 @@ export function RideDetail() {
             {ratingSubmitting ? 'Изпращане...' : 'Изпрати оценка'}
           </button>
         </div>
+      )}
+
+      {reportableUsers.length > 0 && (
+        <div style={{ marginTop: 32, padding: 16, background: '#fff7ed', borderRadius: 12, border: '1px solid #fed7aa' }}>
+          <h2 style={{ fontSize: '1.1rem', marginBottom: 8 }}>Доклад за блокиране</h2>
+          <p style={{ fontSize: 14, color: '#9a3412', marginBottom: 12, lineHeight: 1.5 }}>
+            Ако смятате, че шофьорът нарушава правилата, можете да подадете доклад с обосновка.
+            Администратор ще го прегледа и ще реши дали да блокира профила.
+          </p>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {reportableUsers.map((target) => (
+              <li key={target.id} style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 14 }}>
+                  <strong>{target.name}</strong>
+                </span>
+                {reportedUserIds.has(target.id) ? (
+                  <span style={{ fontSize: 13, color: '#16a34a' }}>Докладът е изпратен</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setReportTarget(target)}
+                    style={{
+                      padding: '6px 12px',
+                      fontSize: 14,
+                      background: '#fff',
+                      color: '#b91c1c',
+                      border: '1px solid #fecaca',
+                      borderRadius: 8,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Докладвай за блокиране
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {reportTarget && ride && (
+        <ReportUserModal
+          reportedUserId={reportTarget.id}
+          reportedUserName={reportTarget.name}
+          rideId={rideId}
+          rideLabel={`${formatCityWithDistrict(ride.fromCity, ride.fromDistrict)} → ${formatCityWithDistrict(ride.toCity, ride.toDistrict)}`}
+          onClose={() => setReportTarget(null)}
+          onSubmit={handleSubmitReport}
+        />
       )}
     </div>
   )

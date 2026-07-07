@@ -86,7 +86,12 @@ export function Messages() {
     const refreshConversation = async () => {
       try {
         const data = await getConversationMessages(selectedConversation.id, token)
-        if (!cancelled) setMessages(data)
+        if (!cancelled) {
+          setMessages(data)
+          setConversations((prev) =>
+            prev.map((c) => (c.id === selectedConversation.id ? { ...c, unreadCount: 0 } : c))
+          )
+        }
       } catch {
         if (!cancelled) setMessages([])
       }
@@ -102,6 +107,33 @@ export function Messages() {
       clearInterval(intervalId)
     }
   }, [token, selectedConversation?.id])
+
+  useEffect(() => {
+    if (!token) return
+    let cancelled = false
+
+    const refreshUnreadCounts = async () => {
+      try {
+        const list = await getConversations(token)
+        if (!cancelled) {
+          setConversations(
+            list.map((c) => (c.id === selectedConversationId ? { ...c, unreadCount: 0 } : c))
+          )
+        }
+      } catch {
+        // ignore polling errors
+      }
+    }
+
+    const intervalId = setInterval(() => {
+      void refreshUnreadCounts()
+    }, 10000)
+
+    return () => {
+      cancelled = true
+      clearInterval(intervalId)
+    }
+  }, [token, selectedConversationId])
 
   useEffect(() => {
     if (!chatScrollRef.current) return
@@ -155,7 +187,29 @@ export function Messages() {
                   cursor: 'pointer',
                 }}
               >
-                <div style={{ fontWeight: 600 }}>{conversationLabel(c)}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                  <div style={{ fontWeight: 600 }}>{conversationLabel(c)}</div>
+                  {c.unreadCount > 0 && (
+                    <span
+                      style={{
+                        minWidth: 20,
+                        height: 20,
+                        borderRadius: 999,
+                        background: '#ef4444',
+                        color: '#fff',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '0 6px',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {c.unreadCount > 99 ? '99+' : c.unreadCount}
+                    </span>
+                  )}
+                </div>
                 <div style={{ fontSize: 12, opacity: 0.9 }}>{c.ride.origin} → {c.ride.destination}</div>
               </button>
             ))

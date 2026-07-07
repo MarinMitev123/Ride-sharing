@@ -5,6 +5,7 @@ import { ToastProvider, useToast } from './contexts/ToastContext'
 import { setGlobalErrorHandler } from './api/client'
 import { approveBooking, getPendingBookingsForDriver, getActiveBookingsForDriver, rejectBooking } from './api/bookings'
 import { getNotifications, markNotificationRead } from './api/notifications'
+import { getUnreadMessagesTotal } from './api/chat'
 import { Login } from './pages/Login'
 import { Register } from './pages/Register'
 import { RidesList } from './pages/RidesList'
@@ -58,6 +59,7 @@ function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
   const [pendingCount, setPendingCount] = useState(0)
   const [notifications, setNotifications] = useState<NotificationDto[]>([])
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notificationActionBookingId, setNotificationActionBookingId] = useState<number | null>(null)
   const [markingReadId, setMarkingReadId] = useState<number | null>(null)
@@ -91,23 +93,27 @@ function Layout({ children }: { children: React.ReactNode }) {
       setHasDriverRides(false)
       setDriverRidesChecked(false)
       setNotifications([])
+      setUnreadMessagesCount(0)
       return
     }
     try {
-      const [pending, active, allNotifications] = await Promise.all([
+      const [pending, active, allNotifications, unreadMessages] = await Promise.all([
         getPendingBookingsForDriver(token).catch(() => []),
         getActiveBookingsForDriver(token).catch(() => []),
         getNotifications(token).catch(() => []),
+        getUnreadMessagesTotal(token).catch(() => 0),
       ])
       setPendingCount(pending.length)
       setHasDriverRides(Array.isArray(active) && active.length > 0)
       setDriverRidesChecked(true)
       setNotifications(allNotifications)
+      setUnreadMessagesCount(unreadMessages)
     } catch {
       setPendingCount(0)
       setHasDriverRides(false)
       setDriverRidesChecked(true)
       setNotifications([])
+      setUnreadMessagesCount(0)
     }
   }
 
@@ -117,6 +123,7 @@ function Layout({ children }: { children: React.ReactNode }) {
       setHasDriverRides(false)
       setDriverRidesChecked(false)
       setNotifications([])
+      setUnreadMessagesCount(0)
       return
     }
     void loadNavData()
@@ -149,6 +156,9 @@ function Layout({ children }: { children: React.ReactNode }) {
     setMarkingReadId(notificationId)
     try {
       await markNotificationRead(notificationId, token)
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notificationId ? { ...n, isRead: true } : n))
+      )
       await loadNavData()
     } catch (err) {
       addToast(err instanceof Error ? err.message : 'Грешка при маркиране на известие', 'error')
@@ -196,7 +206,19 @@ function Layout({ children }: { children: React.ReactNode }) {
               <Link to="/rides">Пътувания</Link>
               <Link to="/rides/new">Създай пътуване</Link>
               <Link to="/my-bookings">Мои резервации</Link>
-              <Link to="/messages">Съобщения</Link>
+              <div className="notifications-nav">
+                <Link
+                  to="/messages"
+                  className={`messages-nav-link${unreadMessagesCount > 0 ? ' messages-nav-link--has-unread' : ''}`}
+                >
+                  Съобщения
+                  {unreadMessagesCount > 0 && (
+                    <span className="notifications-badge" aria-label={`${unreadMessagesCount} непрочетени съобщения`}>
+                      {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
+                    </span>
+                  )}
+                </Link>
+              </div>
               <div className="notifications-nav" ref={notificationsRef}>
                 <button
                   type="button"
