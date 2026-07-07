@@ -1,11 +1,5 @@
 #!/usr/bin/env bash
 # Docker deploy script (Linux / cloud VM)
-#
-# Usage:
-#   ./deploy/scripts/docker-run.sh
-#   ./deploy/scripts/docker-run.sh --public-url http://1.2.3.4
-#   ./deploy/scripts/docker-run.sh --down
-#   ./deploy/scripts/docker-run.sh --logs
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -17,14 +11,11 @@ BUILD=true
 usage() {
   cat <<EOF
 Usage: $0 [options]
-
-Options:
-  --public-url URL   Публичен URL (за облачен VM)
-  --down             Спри контейнерите
-  --logs             Покажи логове
+  --public-url URL   Публичен URL
+  --down             Спри
+  --logs             Логове
   --restart          Рестарт
   --status           Статус
-  -h, --help         Помощ
 EOF
 }
 
@@ -40,13 +31,34 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-command -v docker >/dev/null || { echo "Инсталирай Docker: https://docs.docker.com/engine/install/"; exit 1; }
+command -v docker >/dev/null || { echo "Инсталирай Docker."; exit 1; }
 
-if [[ ! -f "$ENV_FILE" ]]; then
-  if [[ -f "$ROOT_DIR/.env.docker.example" ]]; then
-    cp "$ROOT_DIR/.env.docker.example" "$ENV_FILE"
-    echo "Създаден $ENV_FILE"
+import_dotenv() {
+  local file="$1"
+  [[ -f "$file" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"
+    line="$(echo "$line" | xargs)"
+    [[ -z "$line" ]] && continue
+    [[ "$line" != *"="* ]] && continue
+    export "$line"
+  done < "$file"
+}
+
+get_compose_cmd() {
+  if docker compose version >/dev/null 2>&1; then
+    COMPOSE_CMD=(docker compose)
+  elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE_CMD=(docker-compose)
+  else
+    echo "Липсва Docker Compose (docker compose или docker-compose)." >&2
+    exit 1
   fi
+}
+
+if [[ ! -f "$ENV_FILE" && -f "$ROOT_DIR/.env.docker.example" ]]; then
+  cp "$ROOT_DIR/.env.docker.example" "$ENV_FILE"
+  echo "Създаден $ENV_FILE"
 fi
 
 if [[ -n "$PUBLIC_URL" ]]; then
@@ -58,21 +70,23 @@ if [[ -n "$PUBLIC_URL" ]]; then
   if ! grep -q "^CORS_ORIGINS=" "$ENV_FILE" 2>/dev/null; then
     echo "CORS_ORIGINS=${PUBLIC_URL}:[*]" >> "$ENV_FILE"
   fi
-  echo "PUBLIC_URL = $PUBLIC_URL"
 fi
 
+import_dotenv "$ENV_FILE"
+get_compose_cmd
+echo "Docker Compose: ${COMPOSE_CMD[*]}"
+
 cd "$ROOT_DIR"
-COMPOSE=(docker compose --env-file .env.docker)
 
 case "$ACTION" in
   up)
     echo "Build и старт на Carpool (Docker)..."
     if $BUILD; then
-      "${COMPOSE[@]}" build
+      "${COMPOSE_CMD[@]}" build
     fi
-    "${COMPOSE[@]}" up -d
+    "${COMPOSE_CMD[@]}" up -d
     sleep 3
-    "${COMPOSE[@]}" ps
+    "${COMPOSE_CMD[@]}" ps
     URL="$(grep '^PUBLIC_URL=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo http://localhost)"
     echo ""
     echo "=========================================="
@@ -80,18 +94,8 @@ case "$ACTION" in
     echo "  API health:  $URL/api/v1/health"
     echo "=========================================="
     ;;
-  down)
-    echo "Спиране..."
-    "${COMPOSE[@]}" down
-    ;;
-  logs)
-    "${COMPOSE[@]}" logs -f --tail=100
-    ;;
-  restart)
-    "${COMPOSE[@]}" restart
-    "${COMPOSE[@]}" ps
-    ;;
-  status)
-    "${COMPOSE[@]}" ps
-    ;;
+  down) "${COMPOSE_CMD[@]}" down ;;
+  logs) "${COMPOSE_CMD[@]}" logs -f --tail=100 ;;
+  restart) "${COMPOSE_CMD[@]}" restart; "${COMPOSE_CMD[@]}" ps ;;
+  status) "${COMPOSE_CMD[@]}" ps ;;
 esac

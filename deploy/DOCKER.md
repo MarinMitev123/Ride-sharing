@@ -73,6 +73,6 @@ curl http://localhost/api/v1/health
 ## Спиране и изтриване на данни
 
 ```powershell
-docker compose --env-file .env.docker down      # спира
-docker compose --env-file .env.docker down -v   # спира + изтрива MySQL данни
+.\deploy\scripts\docker-run.ps1 -Down
+docker compose down -v   # изтрива и MySQL данните
 ```
