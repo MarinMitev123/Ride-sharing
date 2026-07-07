@@ -1,5 +1,6 @@
-const DEFAULT_API_BASE = 'http://localhost:8080'
-const API_BASE = import.meta.env.VITE_API_URL ?? DEFAULT_API_BASE
+const configuredApiBase = import.meta.env.VITE_API_URL
+const DEFAULT_API_BASE = import.meta.env.DEV ? 'http://localhost:8080' : ''
+const API_BASE = configuredApiBase !== undefined ? configuredApiBase : DEFAULT_API_BASE
 
 export function getApiUrl(path: string): string {
   const base = String(API_BASE).replace(/\/$/, '')
@@ -8,7 +9,12 @@ export function getApiUrl(path: string): string {
 }
 
 export function getApiBaseUrl(): string {
-  return String(API_BASE).replace(/\/$/, '') || DEFAULT_API_BASE
+  const base = String(API_BASE).replace(/\/$/, '')
+  if (base) return base
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin
+  }
+  return 'http://localhost:8080'
 }
 
 const getNetworkErrorMessage = (): string =>

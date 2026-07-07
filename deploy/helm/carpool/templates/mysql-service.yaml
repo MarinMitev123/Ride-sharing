@@ -1,0 +1,16 @@
+{{- if .Values.mysql.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "carpool.mysql.fullname" . }}
+  labels:
+    {{- include "carpool.mysql.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: mysql
+  selector:
+    {{- include "carpool.mysql.selectorLabels" . | nindent 4 }}
+{{- end }}

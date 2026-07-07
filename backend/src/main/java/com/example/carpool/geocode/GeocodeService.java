@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -35,6 +36,9 @@ public class GeocodeService {
 
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
+
+    @Value("${app.frontend.base-url:http://localhost:5173}")
+    private String frontendBaseUrl;
 
     private final ConcurrentHashMap<String, CachedResults> cache = new ConcurrentHashMap<>();
 
@@ -125,7 +129,7 @@ public class GeocodeService {
             URI uri = builder.build().encode().toUri();
             HttpHeaders headers = new HttpHeaders();
             headers.set("User-Agent", USER_AGENT);
-            headers.set("Referer", "http://localhost:8080/");
+            headers.set("Referer", frontendBaseUrl.endsWith("/") ? frontendBaseUrl : frontendBaseUrl + "/");
             ResponseEntity<String> res = restTemplate.exchange(uri, HttpMethod.GET, new HttpEntity<>(headers), String.class);
             String body = res.getBody();
             if (body == null || body.isBlank()) return List.of();
@@ -225,7 +229,7 @@ public class GeocodeService {
             URI uri = builder.build().encode().toUri();
             HttpHeaders headers = new HttpHeaders();
             headers.set("User-Agent", USER_AGENT);
-            headers.set("Referer", "http://localhost:8080/");
+            headers.set("Referer", frontendBaseUrl.endsWith("/") ? frontendBaseUrl : frontendBaseUrl + "/");
             ResponseEntity<String> res = restTemplate.exchange(uri, HttpMethod.GET, new HttpEntity<>(headers), String.class);
             String body = res.getBody();
             if (body == null || body.isBlank()) return List.of();

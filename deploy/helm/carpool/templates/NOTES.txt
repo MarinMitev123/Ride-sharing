@@ -1,0 +1,21 @@
+1. Get the application URL:
+{{- if .Values.ingress.enabled }}
+{{- if .Values.ingress.host }}
+  http{{ if hasPrefix "https://" .Values.publicBaseUrl }}s{{ end }}://{{ .Values.ingress.host }}/
+{{- else }}
+  kubectl port-forward -n {{ .Values.namespace }} svc/{{ include "carpool.fullname" . }}-ingress-nginx 8080:80
+  # Or find the ingress controller external IP:
+  kubectl get ingress -n {{ .Values.namespace }} {{ include "carpool.fullname" . }}
+{{- end }}
+{{- else }}
+  kubectl port-forward -n {{ .Values.namespace }} svc/{{ include "carpool.frontend.fullname" . }} 8080:80
+{{- end }}
+
+2. Check pods:
+  kubectl get pods -n {{ .Values.namespace }}
+
+3. Backend health:
+  curl {{ include "carpool.publicBaseUrl" . }}/api/v1/health
+
+4. MySQL is internal only:
+  Service: {{ include "carpool.mysql.fullname" . }}:3306
